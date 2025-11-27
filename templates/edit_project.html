@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+
+{% block title %}編輯專案: {{ project.title }}{% endblock %}
+
+{% block content %}
+    <div class="form-wrapper">
+        <h2>編輯專案</h2>
+        
+        {% if error %}
+            <p class="alert alert-error">{{ error }}</p>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('handle_edit_project', project_id=project.id) }}">
+            
+            <div class="form-group">
+                <label for="title">專案標題：</label>
+                <input type="text" id="title" name="title" required value="{{ project.title }}">
+            </div>
+            
+            <div class="form-group">
+                <label for="description">詳細需求描述：</label>
+                <textarea id="description" name="description" rows="8" required>{{ project.description }}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary" style="width: 100%;">儲存變更</button>
+            </div>
+        </form>
+        <br>
+        <a href="{{ url_for('get_project_details', project_id=project.id) }}" class="btn btn-secondary">取消</a>
+    </div>
+{% endblock %}

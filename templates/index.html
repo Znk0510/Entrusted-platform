@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+
+{% block title %}歡迎來到接案平台{% endblock %}
+
+{% block content %}
+
+    <div class="hero-showcase">
+        
+        <div class="hero-content">
+            <h1>歡迎來到工作委託平台</h1>
+            <p>在這裡找到最棒的專家來完成您的專案，或展示您的專業技能來承接案件。</p>
+            
+            {% if user and user.role == 'client' %}
+            <div class="btn-group">
+                <a href="{{ url_for('get_create_project_page') }}" class="btn btn-primary">立即發布專案</a>
+            </div>
+            {% elif user and user.role == 'contractor' %}
+             <div class="btn-group">
+                <a href="{{ url_for('get_contractor_dashboard') }}" class="btn btn-primary">查看可接案件</a>
+            </div>
+            {% else %}
+            <div class="btn-group">
+                <a href="{{ url_for('get_login_page') }}" class="btn btn-primary">登入</a>
+                <a href="{{ url_for('get_register_page') }}" class="btn btn-secondary">註冊</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="hero-image">
+            <img src="{{ url_for('static', path='S__61964299.jpg') }}" alt="平台插圖" class="illustration">
+        </div>
+
+    </div>
+
+{% endblock %}

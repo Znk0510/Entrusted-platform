@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+
+{% block title %}專案詳情: {{ project.title }}{% endblock %}
+
+{% block content %}
+    {% if message %}
+        <p class="alert alert-success">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+        <p class="alert alert-error">{{ error }}</p>
+    {% endif %}
+
+    <div class="content-box">
+        <h2>{{ project.title }}</h2>
+        <p><strong>委託人：</strong> {{ project.client_name }}</p>
+        <p><strong>狀態：</strong> {{ project.status }}</p>
+        
+        <p><strong>需求描述：</strong><br>
+            <span style="white-space: pre-wrap;">{{ project.description }}</span>
+        </p>
+    </div>
+
+    {% if project.status == 'open' and not has_proposed %}
+        <div class="content-box">
+            <h3>提出承包意願</h3>
+            <form method="POST" action="{{ url_for('handle_propose', project_id=project.id) }}">
+                <div class="form-group">
+                    <label for="quote">我的報價：</label>
+                    <input type="number" id="quote" name="quote" step="0.01" min="0" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="message">給委託人的訊息 ( 選填 )：</label>
+                    <textarea id="message" name="message" rows="5"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary">提交報價</button>
+                </div>
+            </form>
+        </div>
+    {% elif has_proposed and project.status == 'open' %}
+         <p class="alert alert-success">你已對此專案報價，正在等待委託人回應。</p>
+    {% endif %}
+
+
+    {% if (project.status == 'in_progress' or project.status == 'rejected') and project.contractor_id == user.id %}
+        <div class="content-box">
+            <h3>上傳結案檔案</h3>
+            {% if project.status == 'rejected' %}
+                <p class="alert alert-error">你的上個檔案已被退件，請修正後重新上傳。</p>
+            {% endif %}
+            
+            <form method="POST" action="{{ url_for('handle_upload_file', project_id=project.id) }}" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="file">選擇檔案：</label>
+                    <input type="file" id="file" name="file" required>
+                </div>
+                
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary">上傳檔案並提交驗收</button>
+                </div>
+            </form>
+        </div>
+    {% endif %}
+    
+    {% if project.status == 'pending_approval' %}
+        <p class="alert alert-success">檔案已提交，正在等待委託人驗收。</p>
+    {% elif project.status == 'completed' %}
+        <p class="alert alert-success">此專案已結案。</p>
+    {% endif %}
+
+    <br>
+    <a href="{{ url_for('get_contractor_dashboard') }}" class="btn btn-secondary">返回儀表板</a>
+{% endblock %}

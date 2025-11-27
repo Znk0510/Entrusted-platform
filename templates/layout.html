@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工作委託平台 - {% block title %}{% endblock %}</title>
+    
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+
+</head>
+<body>
+    
+    <header class="navbar">
+        <div class="container">
+            <a href="{{ url_for('root') }}" class="logo">工作委託平台</a>
+            
+            <ul class="nav-links">
+                {% if user %}
+                    <li><span>你好, {{ user.username }} ({{ user.role }})</span></li>
+                    <li><a href="{{ url_for('handle_logout') }}">登出</a></li>
+                {% else %}
+                    <li><a href="{{ url_for('get_login_page') }}">登入</a></li>
+                    <li><a href="{{ url_for('get_register_page') }}">註冊</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; 2025 工作委託平台</p>
+    </footer>
+
+</body>
+</html>

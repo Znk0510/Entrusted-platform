@@ -1,0 +1,549 @@
+/* 全域與基本設定 */
+/* --- 修改點：---
+  我將 :root 中的變數
+  從「Fiverr 綠」主題
+  改為從你的插圖中提取的「深藍/奶油」主題
+*/
+:root {
+  --primary-color: #1d3a5a; /* 插圖中的深藍色 */
+  --primary-hover: #274b78; /* 深藍色的懸停 (hover) 效果 */
+  --dark-text: #404040;     /* (不變) */
+  --light-text: #777;      /* (不變) */
+  --border-color: #e0dcd2; /* 配合新背景的邊框色 */
+  --bg-light: #f5f0e6;     /* 筆電螢幕的米奶油色 */
+  --white: #ffffff;
+}
+
+/* 基本重設 (Reset) */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box; /* 讓 padding 不會撐開元素寬度 */
+}
+
+body {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; /* 使用乾淨的無襯線字體 */
+  line-height: 1.6;
+  background-color: var(--bg-light); /* 使用新的米奶油色背景 */
+  color: var(--dark-text);
+
+  min-height: 100vh; /* 確保 body 至少和視窗一樣高 */
+  display: flex;
+  flex-direction: column; /* 讓子元素 (header, main, footer) 垂直排列 */
+}
+
+main.container {
+  flex-grow: 1;
+
+  /* (可選) 順便在內容和頁尾之間加點空間 */
+  margin-top: 20px;
+  margin-bottom: 30px;
+}
+
+.container {
+  max-width: 1200px; /* 限制內容最大寬度，使其置中 */
+  margin: 0 auto;    /* 左右 auto 來置中 */
+  padding: 0 20px;   /* 左右留白 */
+}
+
+a {
+  text-decoration: none; /* 移除連結底線 */
+  color: var(--primary-color);
+}
+
+/* 導覽列 */
+
+header.navbar {
+  background-color: var(--white);
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); /* 加上一點陰影 */
+}
+
+.navbar .container {
+  display: flex; /* 使用 Flexbox 來排版 */
+  justify-content: space-between; /* 讓 Logo 和 Nav Links 分散對齊 */
+  align-items: center; /* 垂直置中 */
+}
+
+.navbar .logo {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--primary-color); /* Logo 變為深藍色 */
+}
+
+.navbar .nav-links {
+  list-style: none; /* 移除 ul 的項目符號 */
+  display: flex;
+}
+
+.navbar .nav-links li {
+  margin-left: 25px; /* 項目之間的間距 */
+}
+
+.navbar .nav-links a {
+  color: var(--dark-text);
+  font-weight: 500;
+  padding: 5px 0;
+}
+
+.navbar .nav-links a:hover {
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color); /* 懸停時顯示深藍色底線 */
+}
+
+/* 按鈕 */
+/* 主要按鈕 (例如: 搜尋、註冊) */
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px; /* 圓角 */
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 16px;
+  transition: background-color 0.2s ease; /* 簡易的過場動畫 */
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: var(--white);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+}
+
+/* 次要按鈕 (例如: 登入) */
+.btn-secondary {
+  background-color: var(--white);
+  color: var(--primary-color);
+  border: 1px solid var(--primary-color);
+}
+
+.btn-secondary:hover {
+  /* --- 修改點：從淺綠色 #f7fefc 改為使用新的背景變數 --- */
+  background-color: var(--bg-light); 
+}
+
+/* 主要內容區域 */
+/* 搜尋框 */
+.search-bar {
+  display: flex;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.search-bar input[type="text"] {
+  flex-grow: 1; /* 讓輸入框填滿所有可用空間 */
+  padding: 15px;
+  font-size: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px 0 0 5px; /* 左側圓角 */
+}
+
+.search-bar button {
+  /* 繼承 .btn 和 .btn-primary 的樣式 */
+  border-radius: 0 5px 5px 0; /* 右側圓角 */
+}
+
+
+/* 服務卡片 */
+
+.content-section {
+  padding: 20px 0;
+}
+
+.content-section h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+}
+
+/* 卡片網格 */
+.service-grid {
+  display: grid;
+  /* * 這是簡單的響應式網格 (RWD):
+   * auto-fit: 自動填充
+   * minmax(280px, 1fr): 每個卡片最小 280px，最大 1fr (平分剩餘空間)
+   */
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 25px; /* 卡片之間的間距 */
+}
+
+.card {
+  background-color: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden; /* 確保圖片的圓角生效 */
+  transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); /* 滑鼠移上去時陰影加深 */
+}
+
+.card img.card-img {
+  width: 100%;
+  height: 180px; /* 固定圖片高度 */
+  object-fit: cover; /* 確保圖片被裁切而不是變形 */
+}
+
+.card .card-content {
+  padding: 20px;
+}
+
+.card .card-content h3 {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.card .card-content p {
+  color: var(--light-text);
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+
+.card .card-footer {
+  padding: 15px 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+}
+
+.card .card-footer .price {
+  color: var(--dark-text);
+  font-size: 18px;
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 30px 20px;
+  margin-top: 0;
+  background-color: #333;
+  color: #aaa;
+}
+
+/* 表單樣式 (登入/註冊頁) */
+.form-wrapper {
+  max-width: 500px;
+  margin: 30px auto; /* 上下 30px, 左右自動置中 */
+  padding: 30px;
+  background-color: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.form-wrapper h2 {
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block; /* 讓 label 獨佔一行 */
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+/* 統一所有 input 和 textarea 的樣式 */
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="password"],
+.form-group input[type="number"],
+.form-group textarea {
+  width: 100%; /* 填滿 .form-group */
+  padding: 12px 15px;
+  font-size: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+}
+
+.form-group textarea {
+  resize: vertical; /* 允許垂直調整大小 */
+  min-height: 100px;
+}
+
+/* 讓 radio button 顯示更清楚 */
+.form-group-radio label {
+  font-weight: normal;
+  display: inline-block;
+  margin-left: 8px;
+  margin-right: 20px;
+}
+.form-group-radio input[type="radio"] {
+  transform: scale(1.2); /* 放大 radio 按鈕 */
+  margin-right: 5px;
+}
+
+
+/* 表格樣式 */
+
+.table-styled {
+  width: 100%;
+  border-collapse: collapse; /* 移除儲存格間距 */
+  margin: 20px 0;
+  font-size: 16px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  background-color: var(--white);
+}
+
+.table-styled thead tr {
+  background-color: var(--primary-color); /* 表格頂端變為深藍色 */
+  color: var(--white);
+  text-align: left;
+}
+
+.table-styled th,
+.table-styled td {
+  padding: 12px 15px;
+  border: 1px solid var(--border-color);
+}
+
+.table-styled tbody tr {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.table-styled tbody tr:nth-of-type(even) {
+  background-color: var(--bg-light); /* 斑馬紋變為米奶油色 */
+}
+
+.table-styled tbody tr:last-of-type {
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.table-styled tbody tr:hover {
+  /* --- 修改點：從淺灰色 #f1f1f1 改為配合主題的淺奶油色 --- */
+  background-color: #ede8dd; 
+}
+
+/* 訊息提示 */
+/* (注意：錯誤/成功 訊息通常保持 紅/綠，不跟隨主題色) */
+.alert {
+  padding: 15px;
+  margin: 20px 0;
+  border-radius: 5px;
+  font-weight: bold;
+}
+.alert-error {
+  color: #721c24;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+.alert-success {
+  color: #155724;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+}
+
+/* 小按鈕 用於表格或擁擠的介面 */
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
+.content-box {
+  margin: 20px 0; /* 上下間距 */
+  padding: 30px;
+  background-color: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.content-box ul {
+  list-style-type: none; /* 移除子彈 (•) */
+  padding-left: 0;       /* !!! 關鍵修正：移除瀏覽器預設的 40px 內縮 */
+  margin-top: 8px;       /* 加上一點上方間距 */
+}
+
+/* 幫 ul 裡面的 li (列表項目) 加上一點間距和分隔線 */
+.content-box li {
+  padding: 8px 0; /* 上下 8px 內距 */
+  border-bottom: 1px solid var(--border-color); /* 加上分隔線 */
+}
+
+/* 讓最後一個 li 沒有分隔線 */
+.content-box li:last-child {
+  border-bottom: none;
+}
+
+/* 讓 "沒有檔案" 的 p 標籤也有一點上下空間，與 ul 對齊 */
+.content-box p {
+    margin-top: 8px;
+}
+
+/* --- 這是為首頁插圖新增的樣式 --- */
+
+/* .hero-showcase (首頁展示區塊) */
+.hero-showcase {
+  background-color: var(--white);
+  padding: 40px 30px;
+  margin-top: 20px; /* 與導覽列的間距 */
+  margin-bottom: 30px; /* 與頁尾的間距 */
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center; /* 垂直置中 */
+  justify-content: space-between; /* 左右分散 */
+  gap: 30px; /* 左右區塊的間距 */
+}
+
+.hero-content {
+    flex: 1; /* 佔據可用空間 (約 50%) */
+    /* 文字預設靠左，不需額外設定 */
+}
+
+.hero-image {
+    flex: 1; /* 佔據可用空間 (約 50%) */
+    text-align: center; /* 讓圖片在它的區塊內置中 */
+}
+
+.hero-showcase h1 {
+  font-size: 2.8em; /* 醒目的大標題 */
+  color: var(--dark-text);
+  margin-bottom: 15px;
+}
+
+.hero-showcase p {
+  font-size: 1.2em; /* 清楚的副標題 */
+  color: var(--light-text);
+  margin-bottom: 30px; /* 文字和按鈕的間距 */
+}
+
+/* 讓按鈕在小螢幕上自動換行 */
+.hero-showcase .btn-group {
+  display: flex;
+  gap: 15px; /* 按鈕間距 */
+  flex-wrap: wrap;
+}
+
+.hero-showcase .illustration {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px; /* 圖片加個小圓角 */
+}
+
+/* 響應式設計：小螢幕時改回垂直堆疊 */
+@media (max-width: 768px) {
+  
+  /* --- 修改點：改為垂直排版 --- */
+  .hero-showcase {
+    flex-direction: column; /* 垂直堆疊 */
+    text-align: center; /* 堆疊時，內容改為置中 */
+  }
+
+  /* 讓圖片在上方，文字在下方 --- */
+  .hero-image {
+      order: -1; /* 讓圖片 (order: -1) 排在文字 (order: 0) 前面 */
+      margin-bottom: 20px;
+  }
+  
+  .hero-showcase .btn-group {
+    justify-content: center; /* 堆疊時，按鈕置中 */
+  }
+
+  .hero-showcase h1 {
+    font-size: 2.2em;
+  }
+  .hero-showcase p {
+    font-size: 1em;
+  }
+}
+
+/*「接案人儀表板」兩欄式佈局*/
+
+.dashboard-grid {
+  display: grid;
+  /* grid-template-columns: 2fr 1fr; 
+    左欄佔 2/3 寬度，右欄佔 1/3 寬度
+  */
+  grid-template-columns: 2fr 1fr;
+  gap: 30px; /* 左右欄之間的間距 */
+}
+
+.dashboard-main {
+  /* 左欄 (搜尋、開放專案) */
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* 內部區塊的垂直間距 */
+}
+
+.dashboard-sidebar {
+  /* 右欄 (我的案子) */
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* 內部卡片的垂直間距 */
+}
+
+/* 響應式設計 (RWD)：
+  當螢幕寬度小於 992px 時，
+  改回單欄（垂直堆疊）
+*/
+@media (max-width: 992px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr; /* 變回單欄 */
+  }
+}
+
+/* 儀表板搜尋框 */
+
+.sleek-search-bar {
+  width: 100%;
+  display: flex;
+  gap: 10px; /* 輸入框和按鈕的間距 */
+  /* margin: 20px 0; (由 .dashboard-main 控制) */
+}
+
+/* 用一個 wrapper 來放 icon 和 input */
+.sleek-search-bar .search-input-wrapper {
+  position: relative;
+  flex-grow: 1; /* 讓輸入框填滿剩餘空間 */
+}
+
+/* 搜尋 icon 樣式 */
+.sleek-search-bar .search-icon {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  font-size: 1.2em;
+  color: var(--light-text);
+  pointer-events: none; /* 讓 icon 可以被點穿 */
+}
+
+/* 輸入框樣式 */
+.sleek-search-bar input[type="text"] {
+  width: 100%;
+  padding: 15px 20px 15px 55px; /* 左側留 55px 空間給 icon */
+  font-size: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 30px; /* 圓角 */
+  background-color: var(--white);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 搜尋按鈕樣式 (配合你的 "深藍色" 主題) */
+.sleek-search-bar .btn-search {
+  padding: 15px 25px;
+  border-radius: 30px; /* 圓角 */
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+.sleek-search-bar .btn-search:hover {
+  background-color: var(--primary-hover);
+}

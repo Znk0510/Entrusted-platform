@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+
+{% block title %}委託人儀表板{% endblock %}
+
+{% block content %}
+    <h2>找專家</h2>
+    <p>你好，{{ user.username }}！這裡是你所有的專案。</p>
+
+    <a href="{{ url_for('get_create_project_page') }}" class="btn btn-primary" style="margin: 20px 0; display: inline-block;">
+        + 建立新專案
+    </a>
+    
+    <h3>我的專案列表 (歷史專案列表)</h3>
+    {% if projects %}
+        <table class="table-styled">
+            <thead>
+                <tr>
+                    <th>專案標題</th>
+                    <th>狀態</th>
+                    <th>建立日期</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for project in projects %}
+                <tr>
+                    <td>{{ project.title }}</td>
+                    <td>
+                        <strong>{{ project.status }}</strong>
+                        {% if project.status == 'open' %}
+                            (開放提案中)
+                        {% elif project.status == 'pending_approval' %}
+                            (等待驗收)
+                        {% elif project.status == 'in_progress' %}
+                            (進行中)
+                        {% elif project.status == 'rejected' %}
+                            (已退件)
+                        {% elif project.status == 'completed' %}
+                            (已結案)
+                        {% endif %}
+                    </td>
+                    <td>{{ project.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <a href="{{ url_for('get_project_details', project_id=project.id) }}" class="btn btn-secondary">查看詳情</a>
+                        
+                        {% if project.status == 'open' %}
+                            <a href="{{ url_for('get_edit_project_page', project_id=project.id) }}" class="btn btn-secondary" style="margin-top: 5px;">編輯</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>你目前沒有任何專案。 <a href="{{ url_for('get_create_project_page') }}">建立一個新專案</a>！</p>
+    {% endif %}
+{% endblock %}

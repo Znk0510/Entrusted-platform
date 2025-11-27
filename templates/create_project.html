@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+
+{% block title %}建立新專案{% endblock %}
+
+{% block content %}
+    <div class="form-wrapper">
+        <h2>建立一個新專案</h2>
+        <p>請填寫你的專案需求，開放給接案人報價。</p>
+        <br>
+
+        <form method="POST" action="{{ url_for('handle_create_project') }}">
+            
+            <div class="form-group">
+                <label for="title">專案標題：</label>
+                <input type="text" id="title" name="title" required placeholder="例如：幫我的咖啡廳設計 Logo">
+            </div>
+            
+            <div class="form-group">
+                <label for="description">詳細需求描述：</label>
+                <textarea id="description" name="description" rows="8" required placeholder="請詳細說明你的需求、預算範圍、期望的交付日期等..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-bottom: 10px;">發布專案</button>
+                <a href="{{ url_for('get_client_dashboard') }}" class="btn btn-secondary" style="width: 100%; text-align: center;">取消</a>
+            </div>
+        </form>
+        
+    </div>
+{% endblock %}

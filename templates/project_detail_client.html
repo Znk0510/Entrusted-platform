@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}專案詳情: {{ project.title }}{% endblock %}
+
+{% block content %}
+
+    {% if message %}
+        <p class="alert alert-success">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+        <p class="alert alert-error">{{ error }}</p>
+    {% endif %}
+
+    <div class="content-box">
+        <h2>{{ project.title }}</h2>
+        <p><strong>狀態：</strong> {{ project.status }}</p>
+        
+        <p><strong>需求描述：</strong><br>
+            <span style="white-space: pre-wrap;">{{ project.description }}</span>
+        </p>
+    </div>
+    
+    {% if project.status == 'open' %}
+        <a href="{{ url_for('get_edit_project_page', project_id=project.id) }}" class="btn btn-secondary" style="margin-top: 15px; margin-bottom: 15px;">
+            ✏️ 編輯專案
+        </a>
+    {% endif %}
+
+    {% if project.status == 'open' %}
+        <div class="content-box">
+            <h3>收到的提案 (選擇委託對象)</h3>
+            {% if proposals %}
+                <table class="table-styled">
+                    <thead>
+                        <tr>
+                            <th>接案人</th>
+                            <th>報價</th>
+                            <th>訊息</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in proposals %}
+                        <tr>
+                            <td>{{ p.contractor_name }}</td>
+                            <td>$ {{ "%.2f"|format(p.quote) }}</td>
+                            <td>{{ p.message }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('select_proposal', project_id=project.id, proposal_id=p.id) }}" style="margin: 0;">
+                                    <button type="submit" class="btn btn-primary">選擇此提案</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>目前尚未收到任何提案。</p>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    {% if project.status == 'pending_approval' %}
+        <div class="content-box">
+            <h3>結案管理 (退件 / 接受結案)</h3>
+            <p>接案人已上傳結案檔案，請檢視檔案並執行結案或退件。</p>
+            
+            <form method="POST" action="{{ url_for('manage_case', project_id=project.id) }}" style="display: inline-block; margin-right: 10px;">
+                <input type="hidden" name="action" value="accept">
+                <button type="submit" class="btn btn-primary">✅ 接受結案</button>
+            </form>
+            
+            <form method="POST" action="{{ url_for('manage_case', project_id=project.id) }}" style="display: inline-block;">
+                <input type="hidden" name="action" value="reject">
+                <button type="submit" class="btn" style="background-color: #dc3545; color: white; border-color: #dc3545;">❌ 退件</button>
+            </form>
+        </div>
+    {% endif %}
+
+    {% if project.contractor_id %}
+        <div class="content-box">
+            <p><strong>已選定接案人：</strong> {{ project.contractor_name }} (ID: {{ project.contractor_id }})</p>
+        </div>
+    {% endif %}
+
+    <div class="content-box">
+        <h3>結案檔案列表</h3>
+        {% if files %}
+            <ul>
+                {% for file in files %}
+                    <li>
+                        {{ file.filename }} (由 {{ file.uploader_name }} 上傳於 {{ file.uploaded_at.strftime('%Y-%m-%d') }})
+                        </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>目前沒有已上傳的結案檔案。</p>
+        {% endif %}
+    </div>
+
+    <br>
+    <a href="{{ url_for('get_client_dashboard') }}" class="btn btn-secondary">返回儀表板</a>
+{% endblock %}

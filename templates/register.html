@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+
+{% block title %}註冊新帳號{% endblock %}
+
+{% block content %}
+    <div class="form-wrapper">
+        <h2>註冊新帳號</h2>
+
+        {% if error %}
+            <p class="alert alert-error">{{ error }}</p>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('handle_registration') }}">
+            
+            <div class="form-group">
+                <label for="username">使用者名稱：</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">電子郵件：</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">密碼：</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <div class="form-group form-group-radio">
+                <label>註冊身份：</label><br>
+                <input type="radio" id="role_client" name="role" value="client" checked>
+                <label for="role_client">我是委託人 (發案)</label>
+                <br>
+                <input type="radio" id="role_contractor" name="role" value="contractor">
+                <label for="role_contractor">我是接案人 (接案)</label>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary" style="width: 100%;">註冊</button>
+            </div>
+        </form>
+        
+        <p style="text-align: center; margin-top: 20px;">
+            已經有帳號了？ <a href="{{ url_for('get_login_page') }}">點此登入</a>
+        </p>
+    </div>
+{% endblock %}

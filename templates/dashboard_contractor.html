@@ -1,0 +1,163 @@
+{% extends "layout.html" %}
+
+{% block title %}接案人儀表板{% endblock %}
+
+{% block content %}
+    <h2>找接案</h2>
+    <p>你好，{{ user.username }}！歡迎回來。</p>
+    
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid var(--border-color);">
+    
+    <div class="dashboard-grid">
+
+        <div class="dashboard-main">
+
+            <form class="sleek-search-bar" action="{{ url_for('get_contractor_dashboard') }}" method="GET">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" 
+                           id="search" 
+                           name="search" 
+                           value="{{ search_query or '' }}" 
+                           placeholder="Hi 今天想找什麼案件呢">
+                </div>
+                <button type="submit" class="btn-search">搜尋</button>
+            </form>
+
+            <div class="content-box">
+                <h3>查詢委託專案 (所有開放中的案子)</h3>
+                {% if open_projects %}
+                    <table class="table-styled">
+                        <thead>
+                            <tr>
+                                <th>專案標題</th>
+                                <th>委託人</th>
+                                <th>描述 (部分)</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in open_projects %}
+                            <tr>
+                                <td>{{ project.title }}</td>
+                                <td>{{ project.client_name }}</td>
+                                <td>{{ project.description[:100] }}...</td>
+                                <td>
+                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看詳情 & 報價</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>
+                        {% if search_query %}
+                            找不到符合 "{{ search_query }}" 的開放中專案。
+                        {% else %}
+                            目前沒有任何開放中的專案。
+                        {% endif %}
+                    </p>
+                {% endif %}
+            </div>
+
+        </div> <div class="dashboard-sidebar">
+
+            <div class="content-box">
+                <h3>我贏得的案子</h3>
+                 {% if won_projects %}
+                    <table class="table-styled">
+                        <thead>
+                            <tr>
+                                <th>專案標題</th>
+                                <th>狀態</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in won_projects %}
+                            <tr>
+                                <td>{{ project.title }}</td>
+                                <td>
+                                    <strong>{{ project.status }}</strong>
+                                    {% if project.status == 'in_progress' %}
+                                        (進行中)
+                                    {% elif project.status == 'rejected' %}
+                                        (已退件)
+                                    {% elif project.status == 'pending_approval' %}
+                                        (等待驗收)
+                                    {% elif project.status == 'completed' %}
+                                        (已結案)
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>你目前沒有任何已得標的專案。</p>
+                {% endif %}
+            </div>
+
+            <div class="content-box">
+                <h3>我投標的案子 (審核中)</h3>
+                 {% if bid_projects %}
+                    <table class="table-styled">
+                        <thead>
+                            <tr>
+                                <th>專案標題</th>
+                                <th>委託人</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in bid_projects %}
+                            <tr>
+                                <td>{{ project.title }}</td>
+                                <td>{{ project.client_name }}</td>
+                                <td>
+                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>你目前沒有任何審核中的提案。</p>
+                {% endif %}
+            </div>
+            
+            <div class="content-box">
+                <h3>我未得標的案子</h3>
+                 {% if lost_projects %}
+                    <table class="table-styled">
+                        <thead>
+                            <tr>
+                                <th>專案標題</th>
+                                <th>最終狀態</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in lost_projects %}
+                            <tr>
+                                <td>{{ project.title }}</td>
+                                <td>
+                                    <strong>未被選中</strong>
+                                    ({{ project.status }})
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p>你目前沒有任何未得標的專案。</p>
+                {% endif %}
+            </div>
+
+        </div> </div> {% endblock %}
