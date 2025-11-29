@@ -547,3 +547,72 @@ footer {
 .sleek-search-bar .btn-search:hover {
   background-color: var(--primary-hover);
 }
+
+/* Issue Tracker 樣式 */
+.issue-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: #fff;
+  margin-bottom: 20px;
+  padding: 20px;
+}
+
+.issue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.issue-status-open {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.issue-status-resolved {
+  background-color: #d4edda;
+  color: #155724;
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.comments-section {
+  background-color: #fafafa;
+  padding: 15px;
+  border-radius: 5px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 15px;
+}
+
+.comment {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+/* 讓自己的留言和對方的留言分左右或顏色 */
+.comment.client {
+  background-color: #e3f2fd;
+  margin-right: 20px;
+}
+.comment.contractor {
+  background-color: #f1f8e9;
+  margin-left: 20px;
+}
+
+.comment-meta {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 3px;
+  font-weight: bold;
+}

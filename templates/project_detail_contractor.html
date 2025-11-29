@@ -63,6 +63,48 @@
             </form>
         </div>
     {% endif %}
+
+    {% if issues %}
+    <div class="content-box" style="border-top: 5px solid #28a745;">
+        <h2>Issue Tracker (待解決事項)</h2>
+        <p>委託人針對此專案提出的問題。請在此回覆並修正檔案。</p>
+
+        {% for issue in issues %}
+        <div class="issue-card">
+            <div class="issue-header">
+                <div>
+                    <span class="issue-status-{{ issue.status }}">
+                        {{ '已解決' if issue.status == 'resolved' else '待解決' }}
+                    </span>
+                    <strong style="font-size: 1.1em; margin-left: 10px;">{{ issue.title }}</strong>
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">{{ issue.description }}</div>
+                </div>
+            </div>
+
+            <div class="comments-section">
+                {% for comment in issue.comments %}
+                    <div class="comment {{ comment.role }}">
+                        <div class="comment-meta">{{ comment.username }} ({{ '我' if comment.user_id == user.id else '對方' }}) - {{ comment.created_at.strftime('%m/%d %H:%M') }}</div>
+                        {{ comment.message }}
+                    </div>
+                {% endfor %}
+            </div>
+
+            <!-- 加上 project.status != 'completed' 的判斷 -->
+            {% if issue.status == 'open' and project.status != 'completed' %}
+            <form method="POST" action="{{ url_for('contractor_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px;">
+                <input type="text" name="message" placeholder="回覆委託人..." required style="flex-grow: 1;">
+                <button type="submit" class="btn btn-secondary btn-sm">送出</button>
+            </form>
+            {% elif issue.status == 'resolved' %}
+                <p style="text-align: center; color: green; font-weight: bold;">此問題已解決</p>
+            {% elif project.status == 'completed' %}
+                <p style="text-align: center; color: #666;">專案已結案，無法回覆</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
     
     {% if project.status == 'pending_approval' %}
         <p class="alert alert-success">檔案已提交，正在等待委託人驗收。</p>

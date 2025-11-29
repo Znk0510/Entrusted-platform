@@ -61,6 +61,29 @@ CREATE INDEX IF NOT EXISTS idx_projects_client_id ON projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_projects_contractor_id ON projects(contractor_id);
 CREATE INDEX IF NOT EXISTS idx_proposals_project_id ON proposals(project_id);
 CREATE INDEX IF NOT EXISTS idx_proposals_contractor_id ON proposals(contractor_id);
+
+-- 7. 建立 project_issues 表 (待解決事項)
+CREATE TABLE IF NOT EXISTS project_issues (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    creator_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'open', -- 'open' (未解決) or 'resolved' (已解決)
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. 建立 issue_comments 表 (事項討論/回覆)
+CREATE TABLE IF NOT EXISTS issue_comments (
+    id SERIAL PRIMARY KEY,
+    issue_id INT NOT NULL REFERENCES project_issues(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_issues_project_id ON project_issues(project_id);
+CREATE INDEX IF NOT EXISTS idx_comments_issue_id ON issue_comments(issue_id);
 """
 
 def init_database():

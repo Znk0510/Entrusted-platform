@@ -77,6 +77,81 @@
         </div>
     {% endif %}
 
+    <!-- Issue -->
+    <!-- 只要不是 open，都顯示此區塊，包含 completed -->
+    {% if project.status != 'open' %}
+    <div class="content-box" style="border-top: 5px solid var(--primary-color);">
+        <h2>Issue Tracker (問題追蹤紀錄)</h2>
+        
+        {% if project.status == 'completed' %}
+            <p>專案已結案，以下為歷史溝通紀錄。</p>
+        {% else %}
+            <p>如果你對交付的檔案有問題，請在此建立 Issue，直到問題解決後再結案。</p>
+        {% endif %}
+        
+        <!-- 只有在「未結案」時，才顯示 "新增問題" 的表單 -->
+        {% if project.status != 'completed' %}
+        <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <h4>+ 新增問題 (Issue)</h4>
+            <form method="POST" action="{{ url_for('create_issue', project_id=project.id) }}">
+                <div class="form-group">
+                    <input type="text" name="title" placeholder="問題標題 (例如: 字體太小)" required style="margin-bottom: 10px;">
+                    <textarea name="description" placeholder="詳細描述..." rows="2" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">發布 Issue</button>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- Issue 列表 -->
+        {% if issues %}
+            {% for issue in issues %}
+            <div class="issue-card">
+                <div class="issue-header">
+                    <div>
+                        <span class="issue-status-{{ issue.status }}">
+                            {{ '已解決' if issue.status == 'resolved' else '待解決' }}
+                        </span>
+                        <strong style="font-size: 1.1em; margin-left: 10px;">{{ issue.title }}</strong>
+                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">{{ issue.description }}</div>
+                    </div>
+                    
+                    <!-- 只有在「未結案」且 Issue 還是 open 時，才顯示 "標記為已解決" 按鈕 -->
+                    {% if issue.status == 'open' and project.status != 'completed' %}
+                    <form method="POST" action="{{ url_for('resolve_issue', issue_id=issue.id) }}">
+                        <button type="submit" class="btn btn-sm" style="background-color: #28a745; color: white;">✔ 標記為已解決</button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <!-- 留言區 -->
+                <div class="comments-section">
+                    {% for comment in issue.comments %}
+                        <div class="comment {{ comment.role }}">
+                            <div class="comment-meta">{{ comment.username }} ({{ '我' if comment.user_id == user.id else '對方' }}) - {{ comment.created_at.strftime('%m/%d %H:%M') }}</div>
+                            {{ comment.message }}
+                        </div>
+                    {% endfor %}
+                    {% if not issue.comments %}
+                        <p style="color: #aaa; text-align: center;">尚無留言</p>
+                    {% endif %}
+                </div>
+
+                <!-- 只有在「未結案」且 Issue 還是 open 時，才顯示 "回覆" 表單 -->
+                {% if issue.status == 'open' and project.status != 'completed' %}
+                <form method="POST" action="{{ url_for('client_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px;">
+                    <input type="text" name="message" placeholder="回覆此問題..." required style="flex-grow: 1;">
+                    <button type="submit" class="btn btn-secondary btn-sm">送出</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>此專案沒有任何 Issue 紀錄。</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% if project.contractor_id %}
         <div class="content-box">
             <p><strong>已選定接案人：</strong> {{ project.contractor_name }} (ID: {{ project.contractor_id }})</p>

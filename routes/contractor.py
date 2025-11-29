@@ -162,11 +162,42 @@ async def get_contractor_project_details(
             )
             has_proposed = await cur.fetchone() is not None
 
+        # 取得 Issue Tracker 資料
+        issues = []
+        # 只有當專案狀態不是 open (已經開始合作後) 才顯示 issue
+        if project["status"] != 'open':
+            await cur.execute(
+                """
+                SELECT i.*, u.username AS creator_name
+                FROM project_issues i
+                JOIN users u ON i.creator_id = u.id
+                WHERE i.project_id = %s
+                ORDER BY i.created_at DESC
+                """,
+                (project_id,)
+            )
+            issues_data = await cur.fetchall()
+            
+            for issue in issues_data:
+                await cur.execute(
+                    """
+                    SELECT c.*, u.username, u.role
+                    FROM issue_comments c
+                    JOIN users u ON c.user_id = u.id
+                    WHERE c.issue_id = %s
+                    ORDER BY c.created_at ASC
+                    """,
+                    (issue["id"],)
+                )
+                issue["comments"] = await cur.fetchall()
+                issues.append(issue)    
+
     return templates.TemplateResponse("project_detail_contractor.html", {
         "request": request,
         "user": user,
         "project": project,
         "has_proposed": has_proposed,
+        "issues": issues,
         "message": request.query_params.get("message", None),
         "error": request.query_params.get("error", None)
     })
@@ -306,3 +337,32 @@ async def download_file(
          raise HTTPException(status_code=44, detail="File not found on server.")
 
     return FileResponse(path=filepath, filename=filename)
+
+@router.post("/issue/{issue_id}/comment")
+async def contractor_comment_issue(
+    request: Request,
+    issue_id: int,
+    message: str = Form(...),
+    user: dict = Depends(get_current_contractor_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+        # 驗證接案人是否負責此專案
+        await cur.execute(
+            """
+            SELECT p.id FROM project_issues i
+            JOIN projects p ON i.project_id = p.id
+            WHERE i.id = %s AND p.contractor_id = %s
+            """,
+            (issue_id, user["id"])
+        )
+        project = await cur.fetchone()
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+            
+        await cur.execute(
+            "INSERT INTO issue_comments (issue_id, user_id, message) VALUES (%s, %s, %s)",
+            (issue_id, user["id"], message)
+        )
+        
+    return RedirectResponse(url=f"/contractor/project/{project['id']}?message=Comment+added", status_code=status.HTTP_303_SEE_OTHER)

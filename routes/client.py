@@ -227,12 +227,42 @@ async def get_project_details(
         )
         files = await cur.fetchall()
 
+        # 取得 Issue Tracker 資料
+        issues = []
+        await cur.execute(
+            """
+            SELECT i.*, u.username AS creator_name
+            FROM project_issues i
+            JOIN users u ON i.creator_id = u.id
+            WHERE i.project_id = %s
+            ORDER BY i.created_at DESC
+            """,
+            (project_id,)
+        )
+        issues_data = await cur.fetchall()
+
+        # 為了顯示方便，把每個 Issue 的 comments 也抓出來
+        for issue in issues_data:
+            await cur.execute(
+                """
+                SELECT c.*, u.username, u.role
+                FROM issue_comments c
+                JOIN users u ON c.user_id = u.id
+                WHERE c.issue_id = %s
+                ORDER BY c.created_at ASC
+                """,
+                (issue["id"],)
+            )
+            issue["comments"] = await cur.fetchall()
+            issues.append(issue)
+
     return templates.TemplateResponse("project_detail_client.html", {
         "request": request,
         "user": user,
         "project": project,
         "proposals": proposals,
         "files": files,
+        "issues": issues,
         "message": request.query_params.get("message", None), # 用於顯示成功/失敗訊息
         "error": request.query_params.get("error", None) # 用於顯示 "無法編輯" 訊息
     })
@@ -295,6 +325,18 @@ async def manage_case(
         raise HTTPException(status_code=400, detail="Invalid action")
 
     async with conn.cursor() as cur:
+        # 如果是要結案，必須檢查是否還有 open 的 issues
+        if new_status == "completed":
+            await cur.execute(
+                "SELECT COUNT(*) as count FROM project_issues WHERE project_id = %s AND status = 'open'",
+                (project_id,)
+            )
+            issue_count = await cur.fetchone()
+            if issue_count["count"] > 0:
+                # 如果還有未解決的問題，禁止結案
+                redirect_url = f"/client/project/{project_id}?error=Cannot+complete+project.+Please+resolve+all+issues+first."
+                return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        
         # 確保只有在 'pending_approval' (等待驗收) 狀態下才能執行
         await cur.execute(
             """
@@ -308,3 +350,84 @@ async def manage_case(
     message = "Case+accepted+and+project+completed." if new_status == "completed" else "Case+rejected.+Waiting+for+resubmission."
     redirect_url = f"/client/project/{project_id}?message={message}"
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+# 建立新 Issue
+@router.post("/project/{project_id}/create_issue")
+async def create_issue(
+    request: Request,
+    project_id: int,
+    title: str = Form(...),
+    description: str = Form(...),
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+        # 驗證專案權限
+        await cur.execute("SELECT id FROM projects WHERE id = %s AND client_id = %s", (project_id, user["id"]))
+        if not await cur.fetchone():
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        await cur.execute(
+            "INSERT INTO project_issues (project_id, creator_id, title, description, status) VALUES (%s, %s, %s, %s, 'open')",
+            (project_id, user["id"], title, description)
+        )
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Issue+created", status_code=status.HTTP_303_SEE_OTHER)
+
+# 回覆/留言 Issue
+@router.post("/issue/{issue_id}/comment")
+async def client_comment_issue(
+    request: Request,
+    issue_id: int,
+    message: str = Form(...),
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+        # 找出這個 issue 屬於哪個專案，並確認該專案屬於這個 client
+        await cur.execute(
+            """
+            SELECT p.id FROM project_issues i
+            JOIN projects p ON i.project_id = p.id
+            WHERE i.id = %s AND p.client_id = %s
+            """,
+            (issue_id, user["id"])
+        )
+        project = await cur.fetchone()
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+            
+        await cur.execute(
+            "INSERT INTO issue_comments (issue_id, user_id, message) VALUES (%s, %s, %s)",
+            (issue_id, user["id"], message)
+        )
+        
+    return RedirectResponse(url=f"/client/project/{project['id']}?message=Comment+added", status_code=status.HTTP_303_SEE_OTHER)
+
+# 解決 Issue
+@router.post("/issue/{issue_id}/resolve")
+async def resolve_issue(
+    request: Request,
+    issue_id: int,
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+        # 驗證權限並更新
+        await cur.execute(
+            """
+            UPDATE project_issues
+            SET status = 'resolved'
+            FROM projects
+            WHERE project_issues.project_id = projects.id
+            AND project_issues.id = %s AND projects.client_id = %s
+            RETURNING projects.id
+            """,
+            (issue_id, user["id"])
+        )
+        result = await cur.fetchone()
+        if not result:
+             raise HTTPException(status_code=403, detail="Access denied or issue not found")
+             
+        project_id = result["id"]
+
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Issue+marked+as+resolved", status_code=status.HTTP_303_SEE_OTHER)
