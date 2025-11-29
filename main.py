@@ -7,6 +7,11 @@ from psycopg_pool import AsyncConnectionPool
 from db import getDB # 資料庫連線函式
 import os
 
+# 匯入初始化函式
+from init_db import init_database
+# 每次啟動時，都會自動確保資料表存在
+init_database()
+
 # 應用程式設定
 app = FastAPI()
 
