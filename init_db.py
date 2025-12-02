@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. 建立 projects 表
+-- 3. 建立 projects 表 (修改：增加 deadline)
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
     client_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -32,18 +32,19 @@ CREATE TABLE IF NOT EXISTS projects (
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     status project_status NOT NULL DEFAULT 'open',
+    deadline TIMESTAMPTZ,  -- 新增截止時間
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. 建立 proposals 表 (提案)
+-- 4. 建立 proposals 表 (修改：增加 proposal_file)
 CREATE TABLE IF NOT EXISTS proposals (
     id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     contractor_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    quote NUMERIC(10, 2) NOT NULL,
+    quote DECIMAL(10, 2) NOT NULL,
     message TEXT,
-    submitted_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(project_id, contractor_id) -- 確保同一人對同一案子只能投標一次
+    proposal_file VARCHAR(500), -- 新增提案檔案路徑
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 5. 建立 project_files 表 (結案檔案)

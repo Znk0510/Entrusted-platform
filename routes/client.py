@@ -1,13 +1,19 @@
 from fastapi import APIRouter, Depends, Request, Form, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from psycopg_pool import AsyncConnectionPool
 from db import getDB # 資料庫連線函式
 from routes.auth import get_current_client_user # 導入建立的保護函式
-
+from datetime import datetime
 from main import templates 
+from utils import save_upload_file, FOLDER_PROPOSALS, FOLDER_DELIVERABLES
+import os
 
 # 設定
 router = APIRouter()
+
+# ---------------------------------------------------------
+# 1. 儀表板與專案建立
+# ---------------------------------------------------------
 
 # 委託人儀表板
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -45,147 +51,72 @@ async def get_client_dashboard(
     return templates.TemplateResponse("dashboard_client.html", {
         "request": request,
         "user": user,
-        "projects": projects # 將查詢到的專案傳給 HTML
+        "projects": projects
     })
 
-# 建立新專案
+# 顯示建立新專案頁面
 @router.get("/create_project", response_class=HTMLResponse)
 async def get_create_project_page(
     request: Request, 
-    user: dict = Depends(get_current_client_user) # 保護
+    user: dict = Depends(get_current_client_user)
 ):
-    """
-    顯示「建立新專案」的表單頁面
-    """
     return templates.TemplateResponse("create_project.html", {
         "request": request,
         "user": user
     })
 
+# 處理建立新專案
 @router.post("/create_project")
 async def handle_create_project(
     request: Request,
     title: str = Form(...),
     description: str = Form(...),
-    user: dict = Depends(get_current_client_user), # 保護
+    deadline: str = Form(...), # 接收 HTML datetime-local 字串
+    user: dict = Depends(get_current_client_user),
     conn: AsyncConnectionPool = Depends(getDB)
 ):
-    """
-    處理「建立新專案」的表單提交
-    """
+    # 轉換時間格式
     try:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO projects (title, description, client_id, status)
-                VALUES (%s, %s, %s, 'open')
-                """,
-                (title, description, user["id"])
-            )
-        # 建立成功後，導向儀表板
-        return RedirectResponse(url="/client/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-    except Exception as e:
+        # HTML datetime-local 格式通常是 "YYYY-MM-DDTHH:MM"
+        deadline_dt = datetime.strptime(deadline, "%Y-%m-%dT%H:%M")
+    except ValueError:
         return templates.TemplateResponse("create_project.html", {
-            "request": request,
-            "user": user,
-            "error": f"建立專案失敗: {e}"
+            "request": request, "user": user, "error": "日期格式錯誤"
         })
 
-# 顯示「編輯專案」頁面
-@router.get("/project/{project_id}/edit", response_class=HTMLResponse)
-async def get_edit_project_page(
-    request: Request,
-    project_id: int,
-    user: dict = Depends(get_current_client_user), # 保護
-    conn: AsyncConnectionPool = Depends(getDB)
-):
-    """
-    顯示「編輯專案」的表單頁面
-    """
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT * FROM projects WHERE id = %s AND client_id = %s",
-            (project_id, user["id"])
+            """
+            INSERT INTO projects (client_id, title, description, deadline, status)
+            VALUES (%s, %s, %s, %s, 'open')
+            RETURNING id
+            """,
+            (user["id"], title, description, deadline_dt)
         )
-        project = await cur.fetchone()
-        
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    # 只有 'open' 狀態的專案可以被編輯
-    if project["status"] != 'open':
-        redirect_url = f"/client/project/{project_id}?error=Only+'open'+projects+can+be+edited."
-        return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-        
-    return templates.TemplateResponse("edit_project.html", {
-        "request": request,
-        "user": user,
-        "project": project
-    })
-
-# 處理「編輯專案」提交 
-@router.post("/project/{project_id}/edit")
-async def handle_edit_project(
-    request: Request,
-    project_id: int,
-    title: str = Form(...),
-    description: str = Form(...),
-    user: dict = Depends(get_current_client_user), # 保護
-    conn: AsyncConnectionPool = Depends(getDB)
-):
-    """
-    處理「編輯專案」的表單提交
-    """
-    try:
-        async with conn.cursor() as cur:
-            # 更新專案，但要再次確認是本人且狀態為 'open'
-            await cur.execute(
-                """
-                UPDATE projects
-                SET title = %s, description = %s
-                WHERE id = %s AND client_id = %s AND status = 'open'
-                """,
-                (title, description, project_id, user["id"])
-            )
-            
-            if cur.rowcount == 0:
-                # 如果 rowcount 為 0，代表專案不存在、不是 'open' 狀態或非本人
-                raise HTTPException(status_code=403, detail="Cannot update project.")
-                
-    except Exception as e:
-        # 如果更新失敗，重新顯示編輯頁面並帶上錯誤
-        temp_project_data = {"id": project_id, "title": title, "description": description}
-        return templates.TemplateResponse("edit_project.html", {
-            "request": request,
-            "user": user,
-            "project": temp_project_data,
-            "error": f"Failed to update project: {e}"
-        })
-    
-    # 成功後，導向回專案詳情頁，並帶上成功訊息
-    redirect_url = f"/client/project/{project_id}?message=Project+updated+successfully."
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/client/dashboard", status_code=303)
 
 
-# 專案詳情 & 選擇委託對象
+# ---------------------------------------------------------
+# 2. 專案詳情與編輯
+# ---------------------------------------------------------
+
+# 顯示專案詳情 (整合了提案、檔案、Issue)
 @router.get("/project/{project_id}", response_class=HTMLResponse)
 async def get_project_details(
     request: Request,
     project_id: int,
-    user: dict = Depends(get_current_client_user), # 保護
+    user: dict = Depends(get_current_client_user),
     conn: AsyncConnectionPool = Depends(getDB)
 ):
     """
     顯示單一專案的詳細資訊
-    - 專案基本資料
-    - 收到的所有提案 (用於「選擇委託對象」)
-    - 專案提交的檔案 (用於「結案管理」)
     """
     project = None
     proposals = []
     files = []
     
     async with conn.cursor() as cur:
+        # 1. 查詢專案基本資料
         await cur.execute(
             """
             SELECT p.*, u.username AS contractor_name
@@ -198,13 +129,12 @@ async def get_project_details(
         project = await cur.fetchone()
         
         if not project:
-            # 如果專案不存在，或使用者不是擁有者，拋出 404
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # 取得所有針對此專案的提案，並 JOIN user 資料表取得接案人名稱
+        # 2. 取得提案 (JOIN user)
         await cur.execute(
             """
-            SELECT p.id, p.quote, p.message, p.submitted_at, u.username AS contractor_name
+            SELECT p.id, p.quote, p.message, p.submitted_at, p.proposal_file, u.username AS contractor_name
             FROM proposals p
             JOIN users u ON p.contractor_id = u.id
             WHERE p.project_id = %s
@@ -214,7 +144,7 @@ async def get_project_details(
         )
         proposals = await cur.fetchall()
 
-        # 取得所有提交的結案檔案
+        # 3. 取得結案檔案
         await cur.execute(
             """
             SELECT f.id, f.filename, f.filepath, f.uploaded_at, u.username AS uploader_name
@@ -227,7 +157,7 @@ async def get_project_details(
         )
         files = await cur.fetchall()
 
-        # 取得 Issue Tracker 資料
+        # 4. 取得 Issue Tracker 資料
         issues = []
         await cur.execute(
             """
@@ -241,7 +171,7 @@ async def get_project_details(
         )
         issues_data = await cur.fetchall()
 
-        # 為了顯示方便，把每個 Issue 的 comments 也抓出來
+        # 補上 Issue 的 comments
         for issue in issues_data:
             await cur.execute(
                 """
@@ -263,9 +193,67 @@ async def get_project_details(
         "proposals": proposals,
         "files": files,
         "issues": issues,
-        "message": request.query_params.get("message", None), # 用於顯示成功/失敗訊息
-        "error": request.query_params.get("error", None) # 用於顯示 "無法編輯" 訊息
+        "message": request.query_params.get("message", None),
+        "error": request.query_params.get("error", None)
     })
+
+# 顯示編輯頁面 (補上這個路由，不然按編輯會 404)
+@router.get("/project/{project_id}/edit", response_class=HTMLResponse)
+async def get_edit_project_page(
+    request: Request,
+    project_id: int,
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT * FROM projects WHERE id = %s AND client_id = %s",
+            (project_id, user["id"])
+        )
+        project = await cur.fetchone()
+        
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    if project["status"] != 'open':
+         return RedirectResponse(url=f"/client/project/{project_id}?error=Cannot+edit+project", status_code=303)
+
+    return templates.TemplateResponse("edit_project.html", {
+        "request": request, "user": user, "project": project
+    })
+
+# 處理編輯提交
+@router.post("/project/{project_id}/edit")
+async def handle_edit_project(
+    request: Request,
+    project_id: int,
+    title: str = Form(...),
+    description: str = Form(...),
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE projects
+                SET title = %s, description = %s
+                WHERE id = %s AND client_id = %s AND status = 'open'
+                """,
+                (title, description, project_id, user["id"])
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=403, detail="Cannot update project.")
+    except Exception as e:
+        # 簡單錯誤處理
+        return RedirectResponse(url=f"/client/project/{project_id}?error=Update+failed", status_code=303)
+    
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Project+updated", status_code=303)
+
+
+# ---------------------------------------------------------
+# 3. 業務邏輯 (選人、Issue、下載、結案)
+# ---------------------------------------------------------
 
 # 選擇委託對象
 @router.post("/select_proposal/{project_id}/{proposal_id}")
@@ -273,14 +261,11 @@ async def select_proposal(
     request: Request,
     project_id: int,
     proposal_id: int,
-    user: dict = Depends(get_current_client_user), # 保護
+    user: dict = Depends(get_current_client_user),
     conn: AsyncConnectionPool = Depends(getDB)
 ):
-    """
-    執行「選擇委託對象」
-    """
     async with conn.cursor() as cur:
-        # 先從提案中找出接案人的 ID
+        # 1. 找出接案人ID
         await cur.execute("SELECT contractor_id FROM proposals WHERE id = %s", (proposal_id,))
         proposal = await cur.fetchone()
         
@@ -289,8 +274,7 @@ async def select_proposal(
         
         contractor_id = proposal["contractor_id"]
 
-        # 更新專案狀態，並綁定接案人 ID
-        # 同時要確保這個專案是屬於這個委託人的
+        # 2. 更新專案
         await cur.execute(
             """
             UPDATE projects
@@ -300,56 +284,7 @@ async def select_proposal(
             (contractor_id, project_id, user["id"])
         )
     
-    # 重新導向回專案詳情頁，並帶上成功訊息
-    redirect_url = f"/client/project/{project_id}?message=Contractor+selected+successfully"
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-
-# 結案管理
-@router.post("/manage_case/{project_id}")
-async def manage_case(
-    request: Request,
-    project_id: int,
-    action: str = Form(...), # 表單會傳來 'accept' 或 'reject'
-    user: dict = Depends(get_current_client_user), # 保護
-    conn: AsyncConnectionPool = Depends(getDB)
-):
-    """
-    執行「結案管理」(接受結案 / 退件)
-    """
-    new_status = ""
-    if action == "accept":
-        new_status = "completed"
-    elif action == "reject":
-        new_status = "rejected" # 退件
-    else:
-        raise HTTPException(status_code=400, detail="Invalid action")
-
-    async with conn.cursor() as cur:
-        # 如果是要結案，必須檢查是否還有 open 的 issues
-        if new_status == "completed":
-            await cur.execute(
-                "SELECT COUNT(*) as count FROM project_issues WHERE project_id = %s AND status = 'open'",
-                (project_id,)
-            )
-            issue_count = await cur.fetchone()
-            if issue_count["count"] > 0:
-                # 如果還有未解決的問題，禁止結案
-                redirect_url = f"/client/project/{project_id}?error=Cannot+complete+project.+Please+resolve+all+issues+first."
-                return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-        
-        # 確保只有在 'pending_approval' (等待驗收) 狀態下才能執行
-        await cur.execute(
-            """
-            UPDATE projects
-            SET status = %s
-            WHERE id = %s AND client_id = %s AND status = 'pending_approval'
-            """,
-            (new_status, project_id, user["id"])
-        )
-    
-    message = "Case+accepted+and+project+completed." if new_status == "completed" else "Case+rejected.+Waiting+for+resubmission."
-    redirect_url = f"/client/project/{project_id}?message={message}"
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Contractor+selected", status_code=303)
 
 # 建立新 Issue
 @router.post("/project/{project_id}/create_issue")
@@ -373,7 +308,7 @@ async def create_issue(
         )
     return RedirectResponse(url=f"/client/project/{project_id}?message=Issue+created", status_code=status.HTTP_303_SEE_OTHER)
 
-# 回覆/留言 Issue
+# 回覆 Issue
 @router.post("/issue/{issue_id}/comment")
 async def client_comment_issue(
     request: Request,
@@ -383,7 +318,7 @@ async def client_comment_issue(
     conn: AsyncConnectionPool = Depends(getDB)
 ):
     async with conn.cursor() as cur:
-        # 找出這個 issue 屬於哪個專案，並確認該專案屬於這個 client
+        # 找出專案ID並驗證
         await cur.execute(
             """
             SELECT p.id FROM project_issues i
@@ -412,7 +347,6 @@ async def resolve_issue(
     conn: AsyncConnectionPool = Depends(getDB)
 ):
     async with conn.cursor() as cur:
-        # 驗證權限並更新
         await cur.execute(
             """
             UPDATE project_issues
@@ -430,4 +364,89 @@ async def resolve_issue(
              
         project_id = result["id"]
 
-    return RedirectResponse(url=f"/client/project/{project_id}?message=Issue+marked+as+resolved", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Issue+resolved", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# ---------------------------------------------------------
+# 4. 下載與驗收 (New Features)
+# ---------------------------------------------------------
+
+@router.get("/download")
+async def download_file(
+    path: str, 
+    user: dict = Depends(get_current_client_user)
+):
+    """
+    下載檔案
+    """
+    if ".." in path or not path.startswith("uploads/"):
+        raise HTTPException(status_code=403, detail="Invalid file path")
+    
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    return FileResponse(path)
+
+
+@router.post("/project/{project_id}/approve")
+async def approve_project(
+    project_id: int,
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    """
+    驗收通過 (結案)
+    """
+    async with conn.cursor() as cur:
+        # 檢查是否還有未解決的 Issue，如果有則不能結案
+        await cur.execute(
+            "SELECT COUNT(*) as count FROM project_issues WHERE project_id = %s AND status = 'open'",
+            (project_id,)
+        )
+        issue_count = await cur.fetchone()
+        if issue_count["count"] > 0:
+             return RedirectResponse(url=f"/client/project/{project_id}?error=Resolve+all+issues+first", status_code=303)
+
+        # 執行結案
+        await cur.execute(
+            """
+            UPDATE projects 
+            SET status = 'completed' 
+            WHERE id = %s AND client_id = %s AND status = 'pending_approval'
+            RETURNING id
+            """,
+            (project_id, user["id"])
+        )
+        result = await cur.fetchone()
+        
+    if not result:
+        raise HTTPException(status_code=400, detail="Cannot complete project")
+
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Project+Completed!", status_code=303)
+
+
+@router.post("/project/{project_id}/reject")
+async def reject_project(
+    project_id: int,
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    """
+    退件 (要求修改)
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            UPDATE projects 
+            SET status = 'rejected' 
+            WHERE id = %s AND client_id = %s AND status = 'pending_approval'
+            RETURNING id
+            """,
+            (project_id, user["id"])
+        )
+        result = await cur.fetchone()
+
+    if not result:
+        raise HTTPException(status_code=400, detail="Cannot reject project")
+
+    return RedirectResponse(url=f"/client/project/{project_id}?message=Project+Rejected", status_code=303)

@@ -13,7 +13,21 @@
     <div class="content-box">
         <h2>{{ project.title }}</h2>
         <p><strong>委託人：</strong> {{ project.client_name }}</p>
-        <p><strong>狀態：</strong> {{ project.status }}</p>
+        <p><strong>狀態：</strong> 
+            {% if project.status == 'open' %}開放提案中
+            {% elif project.status == 'in_progress' %}進行中
+            {% elif project.status == 'pending_approval' %}等待驗收
+            {% elif project.status == 'rejected' %}已退件 (需修改)
+            {% elif project.status == 'completed' %}已結案
+            {% else %}{{ project.status }}{% endif %}
+        </p>
+        <p><strong>提案截止日期：</strong> 
+            {% if project.deadline %}
+                {{ project.deadline.strftime('%Y-%m-%d %H:%M') }}
+            {% else %}
+                無截止期限
+            {% endif %}
+        </p>
         
         <p><strong>需求描述：</strong><br>
             <span style="white-space: pre-wrap;">{{ project.description }}</span>
@@ -23,51 +37,87 @@
     {% if project.status == 'open' and not has_proposed %}
         <div class="content-box">
             <h3>提出承包意願</h3>
-            <form method="POST" action="{{ url_for('handle_propose', project_id=project.id) }}">
+            <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                請填寫報價並上傳您的提案計畫書 (PDF)。
+            </p>
+
+            <form method="POST" action="{{ url_for('handle_propose', project_id=project.id) }}" enctype="multipart/form-data">
                 <div class="form-group">
-                    <label for="quote">我的報價：</label>
-                    <input type="number" id="quote" name="quote" step="0.01" min="0" required>
+                    <label for="quote">我的報價 (NT$)：</label>
+                    <input type="number" id="quote" name="quote" step="1" min="0" required placeholder="例如：5000">
                 </div>
                 
                 <div class="form-group">
-                    <label for="message">給委託人的訊息 ( 選填 )：</label>
-                    <textarea id="message" name="message" rows="5"></textarea>
+                    <label for="proposal_pdf">提案計畫書 (限 PDF)：</label>
+                    <input type="file" id="proposal_pdf" name="proposal_pdf" accept=".pdf" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="message">給委託人的訊息 (選填)：</label>
+                    <textarea id="message" name="message" rows="5" placeholder="簡述您的優勢或執行方向..."></textarea>
                 </div>
                 
                 <div class="form-group">
-                    <button type="submit" class="btn btn-primary">提交報價</button>
+                    <button type="submit" class="btn btn-primary">提交報價與計畫書</button>
                 </div>
             </form>
         </div>
+    
     {% elif has_proposed and project.status == 'open' %}
-         <p class="alert alert-success">你已對此專案報價，正在等待委託人回應。</p>
+         <div class="content-box" style="text-align: center; border-left: 5px solid var(--primary-color);">
+            <h3>✅ 已送出提案</h3>
+            <p>您已對此專案報價，請耐心等待委託人回應。</p>
+         </div>
     {% endif %}
 
 
-    {% if (project.status == 'in_progress' or project.status == 'rejected') and project.contractor_id == user.id %}
-        <div class="content-box">
-            <h3>上傳結案檔案</h3>
+    {% if (project.status == 'in_progress' or project.status == 'rejected' or project.status == 'pending_approval') and project.contractor_id == user.id %}
+    <div class="content-box">
+        <h3>
             {% if project.status == 'rejected' %}
-                <p class="alert alert-error">你的上個檔案已被退件，請修正後重新上傳。</p>
+                ⚠️ 修正並重新上傳檔案
+            {% elif project.status == 'pending_approval' %}
+                🔄 更新版本 (目前正在等待驗收)
+            {% else %}
+                上傳結案成果
             {% endif %}
+        </h3>
+
+        {% if project.status == 'rejected' %}
+            <p class="alert alert-error">
+                <strong>注意：</strong> 您的上一個版本已被委託人退回。請參考 Issue 討論進行修改。
+            </p>
+        {% elif project.status == 'pending_approval' %}
+            <p class="alert alert-info" style="background-color: #e2e3e5; color: #383d41; border-color: #d6d8db;">
+                <strong>提示：</strong> 您已提交過檔案。若有修改，可在此直接上傳新版本覆蓋舊的請求。
+            </p>
+        {% else %}
+            <p style="margin-bottom: 15px;">請將完成的成果打包上傳。系統會自動保留舊版本紀錄。</p>
+        {% endif %}
+        
+        <form method="POST" action="{{ url_for('upload_project_file', project_id=project.id) }}" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">選擇檔案 (建議上傳 ZIP 或 PDF)：</label>
+                <input type="file" id="file" name="file" required>
+            </div>
             
-            <form method="POST" action="{{ url_for('handle_upload_file', project_id=project.id) }}" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label for="file">選擇檔案：</label>
-                    <input type="file" id="file" name="file" required>
-                </div>
-                
-                <div class="form-group">
-                    <button type="submit" class="btn btn-primary">上傳檔案並提交驗收</button>
-                </div>
-            </form>
-        </div>
-    {% endif %}
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">
+                    {% if project.status == 'pending_approval' %}
+                        上傳新版本
+                    {% else %}
+                        上傳檔案並提交驗收
+                    {% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+{% endif %}
 
     {% if issues %}
     <div class="content-box" style="border-top: 5px solid #28a745;">
         <h2>Issue Tracker (待解決事項)</h2>
-        <p>委託人針對此專案提出的問題。請在此回覆並修正檔案。</p>
+        <p>委託人針對此專案提出的問題與回饋。</p>
 
         {% for issue in issues %}
         <div class="issue-card">
@@ -90,16 +140,15 @@
                 {% endfor %}
             </div>
 
-            <!-- 加上 project.status != 'completed' 的判斷 -->
             {% if issue.status == 'open' and project.status != 'completed' %}
-            <form method="POST" action="{{ url_for('contractor_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px;">
-                <input type="text" name="message" placeholder="回覆委託人..." required style="flex-grow: 1;">
+            <form method="POST" action="{{ url_for('contractor_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px; margin-top: 10px;">
+                <input type="text" name="message" placeholder="回覆委託人..." required style="flex-grow: 1; padding: 8px;">
                 <button type="submit" class="btn btn-secondary btn-sm">送出</button>
             </form>
             {% elif issue.status == 'resolved' %}
-                <p style="text-align: center; color: green; font-weight: bold;">此問題已解決</p>
+                <p style="text-align: center; color: green; font-weight: bold; margin-top: 10px;">此問題已標記為解決</p>
             {% elif project.status == 'completed' %}
-                <p style="text-align: center; color: #666;">專案已結案，無法回覆</p>
+                <p style="text-align: center; color: #666; margin-top: 10px;">專案已結案</p>
             {% endif %}
         </div>
         {% endfor %}
@@ -107,9 +156,13 @@
     {% endif %}
     
     {% if project.status == 'pending_approval' %}
-        <p class="alert alert-success">檔案已提交，正在等待委託人驗收。</p>
+        <div class="alert alert-success" style="text-align: center; font-size: 1.1em;">
+            <strong>已提交！</strong> 檔案正在等待委託人驗收。
+        </div>
     {% elif project.status == 'completed' %}
-        <p class="alert alert-success">此專案已結案。</p>
+        <div class="alert alert-success" style="text-align: center; font-size: 1.1em;">
+            🎉 恭喜！此專案已順利結案。
+        </div>
     {% endif %}
 
     <br>

@@ -13,7 +13,22 @@
 
     <div class="content-box">
         <h2>{{ project.title }}</h2>
-        <p><strong>狀態：</strong> {{ project.status }}</p>
+        <p><strong>委託人：</strong> {{ project.client_name }}</p>
+        <p><strong>狀態：</strong> 
+            {% if project.status == 'open' %}開放提案中
+            {% elif project.status == 'in_progress' %}進行中
+            {% elif project.status == 'pending_approval' %}等待驗收
+            {% elif project.status == 'rejected' %}已退件 (等待接案人修改)
+            {% elif project.status == 'completed' %}已結案
+            {% else %}{{ project.status }}{% endif %}
+        </p>
+        <p><strong>提案截止日期：</strong> 
+            {% if project.deadline %}
+                {{ project.deadline.strftime('%Y-%m-%d %H:%M') }}
+            {% else %}
+                無截止期限
+            {% endif %}
+        </p>
         
         <p><strong>需求描述：</strong><br>
             <span style="white-space: pre-wrap;">{{ project.description }}</span>
@@ -35,7 +50,7 @@
                         <tr>
                             <th>接案人</th>
                             <th>報價</th>
-                            <th>訊息</th>
+                            <th>計畫書</th> <th>訊息</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -44,6 +59,13 @@
                         <tr>
                             <td>{{ p.contractor_name }}</td>
                             <td>$ {{ "%.2f"|format(p.quote) }}</td>
+                            <td>
+                                {% if p.proposal_file %}
+                                    <a href="/client/download?path={{ p.proposal_file }}" target="_blank" class="btn btn-secondary btn-sm">下載 PDF</a>
+                                {% else %}
+                                    <span style="color: #aaa;">無</span>
+                                {% endif %}
+                            </td>
                             <td>{{ p.message }}</td>
                             <td>
                                 <form method="POST" action="{{ url_for('select_proposal', project_id=project.id, proposal_id=p.id) }}" style="margin: 0;">
@@ -61,24 +83,23 @@
     {% endif %}
 
     {% if project.status == 'pending_approval' %}
-        <div class="content-box">
-            <h3>結案管理 (退件 / 接受結案)</h3>
-            <p>接案人已上傳結案檔案，請檢視檔案並執行結案或退件。</p>
+        <div class="content-box" style="border-left: 5px solid #ffc107;">
+            <h3>⚖️ 結案審核</h3>
+            <p>接案人已上傳最新成果，請下載下方檔案進行確認。</p>
+            <p>若確認無誤，請點選「接受結案」；若需修改，請點選「退件」並在 Issue Tracker 說明原因。</p>
             
-            <form method="POST" action="{{ url_for('manage_case', project_id=project.id) }}" style="display: inline-block; margin-right: 10px;">
-                <input type="hidden" name="action" value="accept">
-                <button type="submit" class="btn btn-primary">✅ 接受結案</button>
-            </form>
-            
-            <form method="POST" action="{{ url_for('manage_case', project_id=project.id) }}" style="display: inline-block;">
-                <input type="hidden" name="action" value="reject">
-                <button type="submit" class="btn" style="background-color: #dc3545; color: white; border-color: #dc3545;">❌ 退件</button>
-            </form>
+            <div style="margin-top: 15px;">
+                <form method="POST" action="{{ url_for('approve_project', project_id=project.id) }}" style="display: inline-block; margin-right: 10px;">
+                    <button type="submit" class="btn btn-primary">✅ 驗收通過 (結案)</button>
+                </form>
+                
+                <form method="POST" action="{{ url_for('reject_project', project_id=project.id) }}" style="display: inline-block;">
+                    <button type="submit" class="btn" style="background-color: #dc3545; color: white; border: none;">❌ 退件 (要求修改)</button>
+                </form>
+            </div>
         </div>
     {% endif %}
 
-    <!-- Issue -->
-    <!-- 只要不是 open，都顯示此區塊，包含 completed -->
     {% if project.status != 'open' %}
     <div class="content-box" style="border-top: 5px solid var(--primary-color);">
         <h2>Issue Tracker (問題追蹤紀錄)</h2>
@@ -89,21 +110,19 @@
             <p>如果你對交付的檔案有問題，請在此建立 Issue，直到問題解決後再結案。</p>
         {% endif %}
         
-        <!-- 只有在「未結案」時，才顯示 "新增問題" 的表單 -->
         {% if project.status != 'completed' %}
         <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
             <h4>+ 新增問題 (Issue)</h4>
             <form method="POST" action="{{ url_for('create_issue', project_id=project.id) }}">
                 <div class="form-group">
-                    <input type="text" name="title" placeholder="問題標題 (例如: 字體太小)" required style="margin-bottom: 10px;">
-                    <textarea name="description" placeholder="詳細描述..." rows="2" required></textarea>
+                    <input type="text" name="title" placeholder="問題標題 (例如: 字體太小)" required style="margin-bottom: 10px; width: 100%; padding: 8px;">
+                    <textarea name="description" placeholder="詳細描述..." rows="2" required style="width: 100%; padding: 8px;"></textarea>
                 </div>
                 <button type="submit" class="btn btn-primary btn-sm">發布 Issue</button>
             </form>
         </div>
         {% endif %}
 
-        <!-- Issue 列表 -->
         {% if issues %}
             {% for issue in issues %}
             <div class="issue-card">
@@ -116,15 +135,13 @@
                         <div style="font-size: 0.9em; color: #666; margin-top: 5px;">{{ issue.description }}</div>
                     </div>
                     
-                    <!-- 只有在「未結案」且 Issue 還是 open 時，才顯示 "標記為已解決" 按鈕 -->
                     {% if issue.status == 'open' and project.status != 'completed' %}
                     <form method="POST" action="{{ url_for('resolve_issue', issue_id=issue.id) }}">
-                        <button type="submit" class="btn btn-sm" style="background-color: #28a745; color: white;">✔ 標記為已解決</button>
+                        <button type="submit" class="btn btn-sm" style="background-color: #28a745; color: white; border: none;">✔ 標記為已解決</button>
                     </form>
                     {% endif %}
                 </div>
 
-                <!-- 留言區 -->
                 <div class="comments-section">
                     {% for comment in issue.comments %}
                         <div class="comment {{ comment.role }}">
@@ -137,10 +154,9 @@
                     {% endif %}
                 </div>
 
-                <!-- 只有在「未結案」且 Issue 還是 open 時，才顯示 "回覆" 表單 -->
                 {% if issue.status == 'open' and project.status != 'completed' %}
-                <form method="POST" action="{{ url_for('client_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px;">
-                    <input type="text" name="message" placeholder="回覆此問題..." required style="flex-grow: 1;">
+                <form method="POST" action="{{ url_for('client_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px; margin-top: 10px;">
+                    <input type="text" name="message" placeholder="回覆此問題..." required style="flex-grow: 1; padding: 5px;">
                     <button type="submit" class="btn btn-secondary btn-sm">送出</button>
                 </form>
                 {% endif %}
@@ -159,17 +175,34 @@
     {% endif %}
 
     <div class="content-box">
-        <h3>結案檔案列表</h3>
+        <h3>檔案提交紀錄 (歷史版本)</h3>
         {% if files %}
-            <ul>
-                {% for file in files %}
-                    <li>
-                        {{ file.filename }} (由 {{ file.uploader_name }} 上傳於 {{ file.uploaded_at.strftime('%Y-%m-%d') }})
-                        </li>
-                {% endfor %}
-            </ul>
+            <table class="table-styled">
+                <thead>
+                    <tr>
+                        <th>檔名</th>
+                        <th>版號 (ID)</th>
+                        <th>上傳者</th>
+                        <th>上傳時間</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                        <tr>
+                            <td>{{ file.filename }}</td>
+                            <td>v{{ file.id }}</td>
+                            <td>{{ file.uploader_name }}</td>
+                            <td>{{ file.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>
+                                <a href="/client/download?path={{ file.filepath }}" target="_blank" class="btn btn-secondary btn-sm">下載</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         {% else %}
-            <p>目前沒有已上傳的結案檔案。</p>
+            <p>目前沒有已上傳的檔案。</p>
         {% endif %}
     </div>
 

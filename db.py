@@ -4,7 +4,7 @@ from psycopg.rows import dict_row
 # db.py
 defaultDB = "work_platform"
 dbUser = "postgres"
-dbPassword = "Znk@0510"
+dbPassword = "ux7e4ywp"
 dbHost = "localhost"
 dbPort = 5432
 
