@@ -8,7 +8,11 @@ import os
 import aiofiles
 
 # 從 main 匯入共用的 templates 物件 
-from main import templates
+#from main import templates
+
+from fastapi.templating import Jinja2Templates
+# 重新定義 templates 物件
+templates = Jinja2Templates(directory="templates")
 
 # 設定
 router = APIRouter()
@@ -132,40 +136,51 @@ async def get_contractor_dashboard(
         "search_query": search_query
     })
 
-# 專案詳情
+# 專案詳情（接案人）
 @router.get("/project/{project_id}", response_class=HTMLResponse)
 async def get_contractor_project_details(
     request: Request,
     project_id: int,
-    user: dict = Depends(get_current_contractor_user), # 保護
+    user: dict = Depends(get_current_contractor_user),
     conn: AsyncConnectionPool = Depends(getDB)
 ):
-    project = None
-    has_proposed = False 
-    
+    has_proposed = False
+    issues = []
+
+    # ⭐ 評價相關
+    client_rating_summary = None
+    client_comments = []
+    can_rate = False
+    already_rated = False
+    client = None
+
     async with conn.cursor() as cur:
+
+        # 1️⃣ 先取得專案（一定要最先）
         await cur.execute(
-            "SELECT p.*, u.username AS client_name FROM projects p "
-            "JOIN users u ON p.client_id = u.id "
-            "WHERE p.id = %s", 
+            """
+            SELECT p.*, u.username AS client_name
+            FROM projects p
+            JOIN users u ON p.client_id = u.id
+            WHERE p.id = %s
+            """,
             (project_id,)
         )
         project = await cur.fetchone()
-        
+
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        if project["status"] == 'open':
+        # 2️⃣ 是否已投標
+        if project["status"] == "open":
             await cur.execute(
-                "SELECT id FROM proposals WHERE project_id = %s AND contractor_id = %s",
+                "SELECT 1 FROM proposals WHERE project_id = %s AND contractor_id = %s",
                 (project_id, user["id"])
             )
             has_proposed = await cur.fetchone() is not None
 
-        # 取得 Issue Tracker 資料
-        issues = []
-        # 只有當專案狀態不是 open (已經開始合作後) 才顯示 issue
-        if project["status"] != 'open':
+        # 3️⃣ Issue Tracker（非 open）
+        if project["status"] != "open":
             await cur.execute(
                 """
                 SELECT i.*, u.username AS creator_name
@@ -177,7 +192,7 @@ async def get_contractor_project_details(
                 (project_id,)
             )
             issues_data = await cur.fetchall()
-            
+
             for issue in issues_data:
                 await cur.execute(
                     """
@@ -190,17 +205,212 @@ async def get_contractor_project_details(
                     (issue["id"],)
                 )
                 issue["comments"] = await cur.fetchall()
-                issues.append(issue)    
+                issues.append(issue)
 
-    return templates.TemplateResponse("project_detail_contractor.html", {
-        "request": request,
-        "user": user,
-        "project": project,
-        "has_proposed": has_proposed,
-        "issues": issues,
-        "message": request.query_params.get("message", None),
-        "error": request.query_params.get("error", None)
-    })
+        # ==================================================
+        # ⭐ 委託人「被評價摘要」（給接案人看）
+        # ==================================================
+        await cur.execute(
+            """
+            SELECT
+                AVG(requirement_rationality_score) AS requirement_rationality_avg,
+                AVG(acceptance_difficulty_score)   AS acceptance_difficulty_avg,
+                AVG(client_attitude_score)         AS client_attitude_avg,
+                COUNT(*)                           AS rating_count
+            FROM ratings
+            WHERE ratee_id = %s
+              AND rating_direction = 'contractor_to_client'
+            """,
+            (project["client_id"],)
+        )
+        client_rating_summary = await cur.fetchone()
+
+        await cur.execute(
+            """
+            SELECT overall_comment, rating_date
+            FROM ratings
+            WHERE ratee_id = %s
+              AND rating_direction = 'contractor_to_client'
+              AND overall_comment IS NOT NULL
+            ORDER BY rating_date DESC
+            LIMIT 5
+            """,
+            (project["client_id"],)
+        )
+        client_comments = await cur.fetchall()
+
+        # ==================================================
+        # ⭐ 接案人 → 委託人 是否可評價
+        # ==================================================
+        if (
+            project["status"] == "completed"
+            and project["contractor_id"] == user["id"]
+        ):
+            # 委託人資料
+            await cur.execute(
+                "SELECT id, username FROM users WHERE id = %s",
+                (project["client_id"],)
+            )
+            client = await cur.fetchone()
+
+            # 是否已評價
+            await cur.execute(
+                """
+                SELECT 1 FROM ratings
+                WHERE project_id = %s
+                  AND rater_id = %s
+                  AND rating_direction = 'contractor_to_client'
+                """,
+                (project_id, user["id"])
+            )
+            already_rated = await cur.fetchone() is not None
+            can_rate = not already_rated
+
+    return templates.TemplateResponse(
+        "project_detail_contractor.html",
+        {
+            "request": request,
+            "user": user,
+            "project": project,
+            "has_proposed": has_proposed,
+            "issues": issues,
+            "message": request.query_params.get("message"),
+            "error": request.query_params.get("error"),
+
+            # ⭐ 評價顯示
+            "client_rating": client_rating_summary,
+            "client_comments": client_comments,
+
+            # ⭐ 評價行為
+            "can_rate": can_rate,
+            "already_rated": already_rated,
+            "client": client,
+        }
+    )
+    
+
+# 專案詳情
+#@router.get("/project/{project_id}", response_class=HTMLResponse)
+#async def get_contractor_project_details(
+  #  request: Request,
+  #  project_id: int,
+   # user: dict = Depends(get_current_contractor_user), # 保護
+   # conn: AsyncConnectionPool = Depends(getDB)
+#):
+   # project = None
+   # has_proposed = False 
+    
+   # async with conn.cursor() as cur:
+   #     await cur.execute(
+   #         "SELECT p.*, u.username AS client_name FROM projects p "
+   #         "JOIN users u ON p.client_id = u.id "
+   #         "WHERE p.id = %s", 
+    #        (project_id,)
+    #    )
+    #    project = await cur.fetchone()
+    
+    #    if not project:
+   #         raise HTTPException(status_code=404, detail="Project not found")
+
+   #     if project["status"] == 'open':
+ #           await cur.execute(
+ #               "SELECT id FROM proposals WHERE project_id = %s AND contractor_id = %s",
+  #              (project_id, user["id"])
+  #          )
+  #          has_proposed = await cur.fetchone() is not None
+
+        # 取得 Issue Tracker 資料
+   #     issues = []
+        # 只有當專案狀態不是 open (已經開始合作後) 才顯示 issue
+     #   if project["status"] != 'open':
+     #       await cur.execute(
+     #           """
+      #          SELECT i.*, u.username AS creator_name
+     #           FROM project_issues i
+    #            JOIN users u ON i.creator_id = u.id
+    #            WHERE i.project_id = %s
+   #             ORDER BY i.created_at DESC
+       #         """,
+   #             (project_id,)
+   #         )
+   #         issues_data = await cur.fetchall()
+            
+     #       for issue in issues_data:
+        #        await cur.execute(
+      #              """
+      #              SELECT c.*, u.username, u.role
+      #              FROM issue_comments c
+      #              JOIN users u ON c.user_id = u.id
+      #              WHERE c.issue_id = %s
+      #              ORDER BY c.created_at ASC
+      #              """,
+       #             (issue["id"],)
+       #         )
+       #         issue["comments"] = await cur.fetchall()
+        #        issues.append(issue)    
+       #         
+    # =========================
+    # ⭐ 評價相關（接案人 → 委託人）
+    # =========================
+   #     can_rate = False
+    #    already_rated = False
+    #    client = None
+#
+    #    if project["status"] == "completed" and project["contractor_id"] == user["id"]:
+            # 取得委託人資料
+      #      await cur.execute(
+        #       "SELECT id, username FROM users WHERE id = %s",
+        #        (project["client_id"],)
+        #    )
+        #    client = await cur.fetchone()
+
+            # 檢查是否已經評價過
+       #     await cur.execute(
+        #        """
+        #        SELECT 1 FROM ratings
+       #         WHERE project_id = %s
+       #           AND rater_id = %s
+       #           AND rating_direction = 'contractor_to_client'
+        #        """,
+      #          (project_id, user["id"])
+        #    )
+      #      already_rated = await cur.fetchone() is not None
+
+       #     can_rate = not already_rated
+            
+
+   # return templates.TemplateResponse("project_detail_contractor.html", {
+     #   "request": request,
+     #   "user": user,
+    #    "project": project,
+    #    "has_proposed": has_proposed,
+    #    "issues": issues,
+     #   "message": request.query_params.get("message", None),
+     #   "error": request.query_params.get("error", None),
+        
+         # ⭐ 評價相關（新增）
+     #   "can_rate": can_rate,
+    #    "already_rated": already_rated,
+    #    "client": client,
+    
+    
+  #  return templates.TemplateResponse("project_detail_contractor.html", {
+  #      "request": request,
+  #      "user": user,
+  #      "project": project,
+  #      "has_proposed": has_proposed,
+   #     "issues": issues,
+  #      "message": request.query_params.get("message", None),
+   #     "error": request.query_params.get("error", None),
+
+        # ⭐ 評價
+   #     "can_rate": can_rate,
+   #     "already_rated": already_rated,
+  #      "client": client,
+ #   })
+
+    
+#})
 
 # 投標
 @router.post("/project/{project_id}/propose")

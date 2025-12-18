@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, Request, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from psycopg_pool import AsyncConnectionPool
-from psycopg_pool import AsyncConnectionPool
 from db import getDB # 資料庫連線函式
 
 # 設定
@@ -10,7 +9,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 # 依賴函式
-async def get_current_user(request: Request, conn: AsyncConnectionPool = Depends(getDB)):
+async def get_current_user( request: Request, conn = Depends(getDB)):
     """
     檢查 session，如果使用者已登入，返回使用者的資料。
     如果未登入，返回 None。

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, Request, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 from psycopg_pool import AsyncConnectionPool
 from db import getDB # 資料庫連線函式
 from routes.auth import get_current_client_user # 導入建立的保護函式
 
-from main import templates 
-
+ 
+templates = Jinja2Templates(directory="templates")
 # 設定
 router = APIRouter()
 
@@ -255,6 +256,34 @@ async def get_project_details(
             )
             issue["comments"] = await cur.fetchall()
             issues.append(issue)
+        
+        # ⭐ 評價相關（委託人 → 接案人）
+        can_rate = False
+        already_rated = False
+        contractor = None
+
+        if project["status"] == "completed":
+            # 專案的接案人
+            await cur.execute(
+                "SELECT id, username FROM users WHERE id = %s",
+                (project["contractor_id"],)
+            )
+            contractor = await cur.fetchone()
+
+            # 是否已評價
+            await cur.execute(
+                """
+                SELECT 1 FROM ratings
+                WHERE project_id = %s
+                AND rater_id = %s
+                AND ratee_id = %s
+                """,
+                (project_id, user["id"], project["contractor_id"])
+            )
+            already_rated = await cur.fetchone() is not None
+
+            can_rate = contractor is not None and not already_rated
+
 
     return templates.TemplateResponse("project_detail_client.html", {
         "request": request,
@@ -264,7 +293,15 @@ async def get_project_details(
         "files": files,
         "issues": issues,
         "message": request.query_params.get("message", None), # 用於顯示成功/失敗訊息
-        "error": request.query_params.get("error", None) # 用於顯示 "無法編輯" 訊息
+        "error": request.query_params.get("error", None), # 用於顯示 "無法編輯" 訊息
+        "request": request,
+        "user": user,
+        "project": project,
+
+        # ⭐ 評價
+        "can_rate": can_rate,
+        "already_rated": already_rated,
+        "contractor": contractor,
     })
 
 # 選擇委託對象
