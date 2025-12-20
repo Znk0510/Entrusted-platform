@@ -14,7 +14,7 @@ router = APIRouter( tags=["rating"])
 @router.post("/ratings")
 async def create_rating(
     project_id: int = Form(...),
-    ratee_id: int = Form(...),
+
 
 
     overall_comment: str | None = Form(None),
@@ -30,10 +30,7 @@ async def create_rating(
     conn=Depends(getDB),
     user: dict = Depends(get_current_user),
 ):
-    if user["role"] == "client":
-        rating_direction = "client_to_contractor"
-    else:
-        rating_direction = "contractor_to_client"
+
 
     async with conn.cursor() as cur:
         # 1️.專案檢查
@@ -78,8 +75,13 @@ async def create_rating(
         )
 
         if await cur.fetchone():
+            if user["role"] == "client":
+                redirect_url = f"/client/project/{project_id}"
+            else:
+                redirect_url = f"/contractor/project/{project_id}"
+
             return RedirectResponse(
-                url=f"/{user['role']}/project/{project_id}?message=Already+rated",
+                url=f"{redirect_url}?message=Already+rated",
                 status_code=status.HTTP_303_SEE_OTHER
             )
 

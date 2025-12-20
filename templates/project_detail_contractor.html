@@ -152,9 +152,8 @@
 <div class="content-box" style="border-top: 5px solid #ffc107;">
     <h3>⭐ 評價委託人</h3>
 
-    <form method="POST" action="{{ url_for('create_rating') }}">
+    <form method="POST" action="/ratings">
         <input type="hidden" name="project_id" value="{{ project.id }}">
-        <input type="hidden" name="ratee_id" value="{{ client.id }}">
 
         <div class="form-group">
             <label>需求合理性</label>
