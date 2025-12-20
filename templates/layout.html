@@ -5,11 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>工作委託平台 - {% block title %}{% endblock %}</title>
     
+    {% block head %}{% endblock %}
+    
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+    
 
 </head>
 <body>
-    
+
     <header class="navbar">
         <div class="container">
             <a href="{{ url_for('root') }}" class="logo">工作委託平台</a>
@@ -26,13 +29,20 @@
         </div>
     </header>
 
+
+
     <main class="container">
         {% block content %}{% endblock %}
     </main>
 
+    <div id="rating-tooltip" class="rating-tooltip hidden">
+    <div id="tooltip-content">載入中...</div>
+    </div>
+
     <footer>
         <p>&copy; 2025 工作委託平台</p>
     </footer>
+
 
 </body>
 </html>

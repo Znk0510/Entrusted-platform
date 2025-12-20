@@ -148,63 +148,53 @@
     </div>
     {% endif %}
     
-    {% if project.status == 'completed' %}
+{% if project.status == 'completed' and can_rate %}
+<div class="content-box" style="border-top: 5px solid #ffc107;">
+    <h3>⭐ 評價委託人</h3>
 
-<div class="content-box" style="border-top: 5px solid #17a2b8;">
-    <h3>⭐ 專案評價</h3>
+    <form method="POST" action="{{ url_for('create_rating') }}">
+        <input type="hidden" name="project_id" value="{{ project.id }}">
+        <input type="hidden" name="ratee_id" value="{{ client.id }}">
 
-    {% if already_rated %}
-        <p style="color: #28a745;">你已經完成此專案的評價，感謝你的回饋。</p>
-
-    {% elif can_rate %}
-        <p>請為委託人 <strong>{{ client.username }}</strong> 評分：</p>
-
-        <form method="POST" action="{{ url_for('create_rating') }}">
-            <input type="hidden" name="project_id" value="{{ project.id }}">
-            <input type="hidden" name="ratee_id" value="{{ client.id }}">
-            <input type="hidden" name="rating_direction" value="contractor_to_client">
-
-            <div class="form-group">
-                <label>需求合理性</label>
-                <select name="requirement_rationality_score" required>
-                    {% for i in range(1,6) %}
+        <div class="form-group">
+            <label>需求合理性</label>
+            <select name="requirement_rationality_score" required>
+                {% for i in range(1,6) %}
                     <option value="{{ i }}">{{ i }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+                {% endfor %}
+            </select>
+        </div>
 
-            <div class="form-group">
-                <label>驗收難易度</label>
-                <select name="acceptance_difficulty_score" required>
-                    {% for i in range(1,6) %}
+        <div class="form-group">
+            <label>驗收難易度</label>
+            <select name="acceptance_difficulty_score" required>
+                {% for i in range(1,6) %}
                     <option value="{{ i }}">{{ i }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+                {% endfor %}
+            </select>
+        </div>
 
-            <div class="form-group">
-                <label>合作態度</label>
-                <select name="client_attitude_score" required>
-                    {% for i in range(1,6) %}
+        <div class="form-group">
+            <label>合作態度</label>
+            <select name="client_attitude_score" required>
+                {% for i in range(1,6) %}
                     <option value="{{ i }}">{{ i }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+                {% endfor %}
+            </select>
+        </div>
 
-            <div class="form-group">
-                <label>整體評論</label>
-                <textarea name="overall_comment" rows="3" placeholder="你的心得與建議..."></textarea>
-            </div>
+        <div class="form-group">
+            <label>整體評論</label>
+            <textarea name="overall_comment" rows="3"></textarea>
+        </div>
 
-            <button type="submit" class="btn btn-primary">送出評價</button>
-        </form>
-
-    {% else %}
-        <p style="color: #999;">目前無法進行評價。</p>
-    {% endif %}
+        <button type="submit" class="btn btn-primary">
+            送出評價
+        </button>
+    </form>
 </div>
-
 {% endif %}
+
 
 
 

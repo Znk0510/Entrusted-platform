@@ -205,7 +205,7 @@ async def get_project_details(
         # 取得所有針對此專案的提案，並 JOIN user 資料表取得接案人名稱
         await cur.execute(
             """
-            SELECT p.id, p.quote, p.message, p.submitted_at, u.username AS contractor_name
+            SELECT p.id, p.quote, p.message, p.submitted_at,u.id AS contractor_id, u.username AS contractor_name
             FROM proposals p
             JOIN users u ON p.contractor_id = u.id
             WHERE p.project_id = %s
@@ -262,7 +262,10 @@ async def get_project_details(
         already_rated = False
         contractor = None
 
-        if project["status"] == "completed":
+        if (
+            project["status"] == "completed"
+            and project["client_id"] == user["id"]
+        ):
             # 專案的接案人
             await cur.execute(
                 "SELECT id, username FROM users WHERE id = %s",
@@ -277,6 +280,7 @@ async def get_project_details(
                 WHERE project_id = %s
                 AND rater_id = %s
                 AND ratee_id = %s
+                AND rating_direction = 'client_to_contractor'
                 """,
                 (project_id, user["id"], project["contractor_id"])
             )
@@ -468,3 +472,76 @@ async def resolve_issue(
         project_id = result["id"]
 
     return RedirectResponse(url=f"/client/project/{project_id}?message=Issue+marked+as+resolved", status_code=status.HTTP_303_SEE_OTHER)
+    
+@router.post("/rating")
+async def create_rating(
+    request: Request,
+    project_id: int = Form(...),
+    output_quality_score: int = Form(...),
+    execution_efficiency_score: int = Form(...),
+    contractor_attitude_score: int = Form(...),
+    overall_comment: str = Form(None),
+    user: dict = Depends(get_current_client_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+
+        # ① 先抓專案
+        await cur.execute(
+            "SELECT contractor_id FROM projects WHERE id = %s",
+            (project_id,)
+        )
+        project = await cur.fetchone()
+
+        if not project or not project["contractor_id"]:
+            raise HTTPException(status_code=400, detail="Invalid project")
+
+        # ② 正確的 ratee_id
+        ratee_id = project["contractor_id"]
+
+        # ③ 防止重複評價
+        await cur.execute(
+            """
+            SELECT 1 FROM ratings
+            WHERE project_id = %s
+            AND rater_id = %s
+            AND ratee_id = %s
+            """,
+            (project_id, user["id"], ratee_id)
+        )
+        if await cur.fetchone():
+            return RedirectResponse(
+                url=f"/client/project/{project_id}?message=Already+rated",
+                status_code=status.HTTP_303_SEE_OTHER
+            )
+
+        # ④ 寫入評價
+        await cur.execute(
+            """
+            INSERT INTO ratings (
+                project_id,
+                rater_id,
+                ratee_id,
+                output_quality_score,
+                execution_efficiency_score,
+                contractor_attitude_score,
+                overall_comment,
+                rating_direction
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,'client_to_contractor')
+            """,
+            (
+                project_id,
+                user["id"],
+                ratee_id,
+                output_quality_score,
+                execution_efficiency_score,
+                contractor_attitude_score,
+                overall_comment,
+            )
+        )
+
+    return RedirectResponse(
+        url=f"/client/project/{project_id}?message=Rating+submitted",
+        status_code=status.HTTP_303_SEE_OTHER
+    )

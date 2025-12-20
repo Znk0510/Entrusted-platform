@@ -259,12 +259,12 @@ async def get_contractor_project_details(
                 SELECT 1 FROM ratings
                 WHERE project_id = %s
                   AND rater_id = %s
-                  AND rating_direction = 'contractor_to_client'
+                  AND rating_direction = %s
                 """,
-                (project_id, user["id"])
+                (project_id, user["id"], "contractor_to_client")
             )
             already_rated = await cur.fetchone() is not None
-            can_rate = not already_rated
+            can_rate = (project["status"] == "completed") and not already_rated
 
     return templates.TemplateResponse(
         "project_detail_contractor.html",
@@ -285,7 +285,10 @@ async def get_contractor_project_details(
             "can_rate": can_rate,
             "already_rated": already_rated,
             "client": client,
+            
+            
         }
+        
     )
     
 

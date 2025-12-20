@@ -2,11 +2,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Form
 from fastapi.responses import RedirectResponse
 from typing import Optional
-
 from db import getDB
 from routes.auth import get_current_user
 
-router = APIRouter(prefix="/api", tags=["rating"])
+router = APIRouter( tags=["rating"])
 
 
 # ------------------------------------------------------
@@ -16,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["rating"])
 async def create_rating(
     project_id: int = Form(...),
     ratee_id: int = Form(...),
-    rating_direction: str = Form(...),
+
 
     overall_comment: str | None = Form(None),
 
@@ -31,8 +30,13 @@ async def create_rating(
     conn=Depends(getDB),
     user: dict = Depends(get_current_user),
 ):
+    if user["role"] == "client":
+        rating_direction = "client_to_contractor"
+    else:
+        rating_direction = "contractor_to_client"
+
     async with conn.cursor() as cur:
-        # 1️⃣ 專案檢查
+        # 1️.專案檢查
         await cur.execute(
             "SELECT client_id, contractor_id, status FROM projects WHERE id = %s",
             (project_id,)
@@ -41,17 +45,43 @@ async def create_rating(
 
         if not project or project["status"] != "completed":
             raise HTTPException(status_code=400, detail="Project not completed")
+            
+        # 2. 依角色決定「評價方向」與「被評者」
+        if user["role"] == "client":
+            if user["id"] != project["client_id"]:
+                raise HTTPException(status_code=403)
 
-        # 2️⃣ 防重複評價
+            rating_direction = "client_to_contractor"
+            ratee_id = project["contractor_id"]
+
+        elif user["role"] == "contractor":
+            if user["id"] != project["contractor_id"]:
+                raise HTTPException(status_code=403)
+
+            rating_direction = "contractor_to_client"
+            ratee_id = project["client_id"]
+
+        else:
+            raise HTTPException(status_code=403)
+
+        # 3.防止重複評價（依 direction）
         await cur.execute(
             """
-            SELECT 1 FROM ratings
-            WHERE project_id = %s AND rater_id = %s
+            SELECT 1
+            FROM ratings
+            WHERE project_id = %s
+              AND rater_id = %s
+              AND ratee_id = %s
+              AND rating_direction = %s
             """,
-            (project_id, user["id"])
+            (project_id, user["id"], ratee_id, rating_direction)
         )
+
         if await cur.fetchone():
-            raise HTTPException(status_code=400, detail="Already rated")
+            return RedirectResponse(
+                url=f"/{user['role']}/project/{project_id}?message=Already+rated",
+                status_code=status.HTTP_303_SEE_OTHER
+            )
 
         # 3️⃣ 寫入評價
         await cur.execute(
@@ -88,8 +118,8 @@ async def create_rating(
         msg = "你已成功評價委託人"
 
     return RedirectResponse(
-        url=f"{redirect_url}?message={msg}",
-        status_code=303
+    url=f"{redirect_url}?message=Rating+submitted",
+    status_code=status.HTTP_303_SEE_OTHER
 )
 
 @router.get("/contractors/{contractor_id}/rating-preview")
