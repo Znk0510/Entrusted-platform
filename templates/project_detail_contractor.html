@@ -20,7 +20,8 @@
         </p>
     </div>
     
-    <div class="content-box" style="border-top: 5px solid #ffc107;">
+  {% if project.status == 'open' %}
+<div class="content-box" style="border-top: 5px solid #ffc107;">
     <h3>⭐ 委託人過去評價</h3>
 
     {% if client_rating.rating_count > 0 %}
@@ -60,6 +61,7 @@
         <p style="color:#999;">此委託人尚未收到任何評價</p>
     {% endif %}
 </div>
+{% endif %}
 
 
     {% if project.status == 'open' and not has_proposed %}
@@ -104,6 +106,10 @@
                 </div>
             </form>
         </div>
+        
+    <div id="rating-tooltip" class="rating-tooltip hidden">
+        <div id="tooltip-content"></div>
+    </div>
     {% endif %}
 
     {% if issues %}
@@ -152,7 +158,7 @@
 <div class="content-box" style="border-top: 5px solid #ffc107;">
     <h3>⭐ 評價委託人</h3>
 
-    <form method="POST" action="/ratings">
+    <form method="POST" action="/api/ratings">
         <input type="hidden" name="project_id" value="{{ project.id }}">
 
         <div class="form-group">

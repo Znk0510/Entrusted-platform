@@ -13,7 +13,7 @@ import uvicorn
 
 # 匯入初始化函式
 #from init_db import init_database
-# 每次啟動時，都會自動確保資料表存在
+# 每次啟動時，都會自動確保資料表存在 
 #init_database()
 
 # 應用程式設定
@@ -83,7 +83,7 @@ from routes.rating import router as rating_router
 app.include_router(auth_router)
 app.include_router(client_router, prefix="/client")
 app.include_router(contractor_router, prefix="/contractor")
-app.include_router(rating_router,) # 💡 新增：註冊評價路由
+app.include_router(rating_router, prefix="/api") # 💡 新增：註冊評價路由
 # app.include_router(upload_router, prefix="/api") # 你的 upload router
 
 
