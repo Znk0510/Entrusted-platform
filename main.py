@@ -3,149 +3,90 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from contextlib import asynccontextmanager # 導入 asynccontextmanager
-from db import getDB, DATABASE_CONNINFO, init_pool, close_pool # 資料庫連線函式
+from psycopg_pool import AsyncConnectionPool
+from db import getDB # 匯入資料庫連線依賴函式
 import os
-import asyncio
-from datetime import datetime, timedelta
-from init_db import ensure_database_exists, initialize_database
-import uvicorn
 
-# 匯入初始化函式
-#from init_db import init_database
-# 每次啟動時，都會自動確保資料表存在 
-#init_database()
+# --- 1. 資料庫初始化 ---
+from init_db import init_database
 
-# 應用程式設定
-#app = FastAPI()
+# 每次伺服器啟動時，自動執行此函式來檢查並建立資料表
+# 這樣就不用手動去資料庫下 SQL 指令
+init_database()
 
-# 掛載靜態檔案目錄
-#app.mount("/static", StaticFiles(directory="static"), name="static")
+# --- 2. 建立應用程式 ---
+app = FastAPI()
 
-# 設定 Jinja2 模板
-#templates = Jinja2Templates(directory="templates")
-
-# 設定 Session 中間件
-#app.add_middleware(
-  ## secret_key=os.getenv("SECRET_KEY", "a_very_secret_key_please_change_me"), # 強烈建議使用環境變數
-  #  max_age=86400,  # 1 day
-   # same_site="lax",
-   # https_only=False, # 在生產環境中應設為 True
-#)
-
-
-# ---------------------------------------------
-# A. 應用程式生命週期管理 (使用 lifespan)
-# ---------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("🚀 App starting...")
-        
-    await ensure_database_exists()
-    # 3️⃣ 再建資料表
-    await initialize_database()
-    # 2️⃣ 再初始化 pool（連到新 database）
-    await init_pool()
-
-    print("✅ Database ready")
-    yield
-
-    print("🛑 Shutting down...")
-    await close_pool()
-
-# 應用程式設定，並連結 lifespan
-# ---------------------------------------------------------
-# B. 建立 FastAPI 實例
-# ---------------------------------------------------------
-app = FastAPI(lifespan=lifespan)
-
-# ---------------------------------------------
-# C. 靜態/模板/Session 設定 (保持不變)
-# ---------------------------------------------
+# --- 3. 掛載靜態檔案 ---
+# 讓瀏覽器可以讀取 CSS, JS, 圖片等靜態資源
+# 例如：HTML 裡的 <link href="/static/style.css"> 會對應到專案的 static 資料夾
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 掛載上傳檔案目錄
+# 讓使用者上傳的頭像或檔案可以透過 URL 被讀取
+# 例如：<img src="/uploads/avatars/..."> 會對應到 uploads 資料夾
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# --- 4. 設定樣板引擎 ---
+# 指定 HTML 檔案都放在 "templates" 資料夾內
+# Jinja2 讓我們可以在 HTML 裡面寫變數，例如 {{ user.username }}
 templates = Jinja2Templates(directory="templates")
 
+# --- 5. 設定 Session (登入狀態管理) ---
+# Session 用來像餅乾(Cookie)一樣記住使用者的登入狀態
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SECRET_KEY", "a_very_secret_key_please_change_me"),
-    max_age=86400,
-    same_site="lax",
-    https_only=False,
+    # SECRET_KEY 是加密用的鑰匙，正式上線時建議改用環境變數讀取
+    secret_key=os.getenv("SECRET_KEY", "a_very_secret_key_please_change_me"), 
+    max_age=86400,  # 登入狀態維持 1 天 (86400秒)
+    same_site="lax", # 防止 CSRF 攻擊的設定
+    https_only=False, # 本地開發設為 False，正式上線有 HTTPS 時應設為 True
 )
 
-
-# D.路由
-from init_db import initialize_database
+# --- 6. 匯入各個功能的路由 (Router) ---
+# 我們把不同功能拆到不同檔案，避免 main.py 太長
 from routes.auth import router as auth_router, get_current_user
 from routes.client import router as client_router
 from routes.contractor import router as contractor_router
-from routes.rating import router as rating_router
-app.include_router(auth_router)
+from routes.users import router as users_router # 使用者個人檔案與評價功能
+from routes.support import router as support_router # 客服頁面
+from routes.ai import router as ai_router # AI 小助手功能
+
+# --- 7. 註冊路由到主程式 ---
+# prefix 表示網址的前綴
+# 例如 client_router 的功能都會在 http://網站/client/... 底下
+app.include_router(auth_router) # 登入註冊 (無前綴)
 app.include_router(client_router, prefix="/client")
 app.include_router(contractor_router, prefix="/contractor")
-app.include_router(rating_router, prefix="/api") # 💡 新增：註冊評價路由
-# app.include_router(upload_router, prefix="/api") # 你的 upload router
+app.include_router(users_router, prefix="/users")
+app.include_router(support_router) # 客服 (無前綴)
+app.include_router(ai_router, prefix="/api/ai") # AI API
 
-
-# E.首頁
+# --- 8. 首頁路由邏輯 ---
 @app.get("/")
 async def root(request: Request, user: dict | None = Depends(get_current_user)):
     """
-    首頁
-    - 已登入，根據角色導向不同的儀表板
-    - 未登入，顯示歡迎頁面 或 導向登入頁
+    首頁處理函式：
+    這個函式是網站的「門面」，它會判斷你是誰，然後帶你去該去的地方。
+    
+    參數:
+    - request: 用來傳給樣板，讓 HTML 知道當前的網址資訊
+    - user: 透過 get_current_user 依賴函式，自動檢查是否已登入
     """
+    
+    # 如果使用者已經登入 (user 不是 None)
     if user:
+        # 判斷角色：如果是委託人 (client)
         if user["role"] == "client":
-            # 導向委託人
+            # 強制導向到「委託人儀表板」
             return RedirectResponse(url="/client/dashboard", status_code=302)
+        # 判斷角色：如果是接案人 (contractor)
         elif user["role"] == "contractor":
-            # 導向接案人
+            # 強制導向到「接案人儀表板」
             return RedirectResponse(url="/contractor/dashboard", status_code=302)
     
+    # 如果沒登入，就顯示一般的歡迎首頁 (index.html)
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "user": user # 將 user 物件傳給模板 (可以是 None)
+        "user": user # 把 user 資訊傳給 HTML，這樣導覽列才能顯示「登入/註冊」按鈕
     })
-
-
-
-# --- F. 應用程式主啟動流程 ---
-# 這是你應用程式的入口點，確保在其他函式使用資料庫之前運行 initialize_database。
-#async def main():
-    # 1. 執行初始化：如果成功，才繼續下一步
- #   success = await initialize_database(DATABASE_CONNINFO)
-  #  if not success:
-   #     return 
-    
-    # 2. 建立連線池供整個應用程式使用
-   # global db_pool # 如果你需要在其他地方使用這個 pool
-   # db_pool = AsyncConnectionPool(DATABASE_CONNINFO)
-   # await db_pool.open()
-   # print("系統連線池已開啟，應用程式開始運行...")
-
-    # ... 其他啟動程式碼 (例如：啟動 Web Server) ...
-
-    # 結束時記得關閉連線池
-   # await db_pool.close()
-#if __name__ == "__main__":
-#    asyncio.run(main())
-    
-# ---------------------------------------------
-# F. 應用程式主啟動流程 (修改 async def main)
-# ---------------------------------------------
-# 💡 修正：移除手動的連線池創建和關閉，因為 lifespan 已經處理了這些。
-async def main():
-    """
-    應用程式主入口點。現在只負責啟動 Uvicorn Web Server。
-    資料庫初始化和連線池管理已委託給 app.lifespan。
-    """
-
-    print("正在啟動 Web 服務...")
-    # Uvicorn 將會使用 app.lifespan 來處理資料庫的啟動和關閉
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-if __name__ == "__main__":
-    # 這裡直接運行 main 函數
-    print(f"PostgreSQL 連線目標: {DATABASE_CONNINFO}") 
-    asyncio.run(main())

@@ -3,161 +3,462 @@
 {% block title %}接案人儀表板{% endblock %}
 
 {% block content %}
-    <h2>找接案</h2>
-    <p>你好，{{ user.username }}！歡迎回來。</p>
-    
-    <hr style="margin: 20px 0; border: 0; border-top: 1px solid var(--border-color);">
-    
-    <div class="dashboard-grid">
 
-        <div class="dashboard-main">
+    <style>
+        /* 三欄佈局容器 */
+        .filter-three-col-grid {
+            display: grid;
+            grid-template-columns: 1.4fr 1.2fr 0.8fr; /* 設定三欄比例：預算略寬，排序最窄 */
+            gap: 25px;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px dashed #eee;
+        }
 
-            <form class="sleek-search-bar" action="{{ url_for('get_contractor_dashboard') }}" method="GET">
-                <div class="search-input-wrapper">
-                    <span class="search-icon">🔍</span>
-                    <input type="text" 
-                           id="search" 
-                           name="search" 
-                           value="{{ search_query or '' }}" 
-                           placeholder="Hi 今天想找什麼案件呢">
-                </div>
-                <button type="submit" class="btn-search">搜尋</button>
-            </form>
+        /* 每個欄位的標題 */
+        .filter-col-title {
+            font-size: 0.95em;
+            font-weight: bold;
+            color: #1d3a5a; /* 深藍色 */
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
 
-            <div class="content-box">
-                <h3>查詢委託專案 (所有開放中的案子)</h3>
-                {% if open_projects %}
-                    <table class="table-styled">
-                        <thead>
-                            <tr>
-                                <th>專案標題</th>
-                                <th>委託人</th>
-                                <th>描述 (部分)</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for project in open_projects %}
-                            <tr>
-                                <td>{{ project.title }}</td>
-                                <td>{{ project.client_name }}</td>
-                                <td>{{ project.description[:100] }}...</td>
-                                <td>
-                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看詳情 & 報價</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>
-                        {% if search_query %}
-                            找不到符合 "{{ search_query }}" 的開放中專案。
-                        {% else %}
-                            目前沒有任何開放中的專案。
-                        {% endif %}
-                    </p>
-                {% endif %}
-            </div>
+        /* 第一欄：預算輸入框列 */
+        .budget-input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .budget-input-row input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
 
-        </div> <div class="dashboard-sidebar">
+        /* 第一欄：快速按鈕群組 */
+        .quick-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .tag-btn {
+            background: #f0f4f8;
+            border: 1px solid #dae1e7;
+            border-radius: 15px;
+            padding: 4px 12px;
+            font-size: 0.85em;
+            color: #555;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tag-btn:hover {
+            background: #e3f2fd;
+            color: #1976d2;
+            border-color: #bbdefb;
+        }
 
-            <div class="content-box">
-                <h3>我贏得的案子</h3>
-                 {% if won_projects %}
-                    <table class="table-styled">
-                        <thead>
-                            <tr>
-                                <th>專案標題</th>
-                                <th>狀態</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for project in won_projects %}
-                            <tr>
-                                <td>{{ project.title }}</td>
-                                <td>
-                                    <strong>{{ project.status }}</strong>
-                                    {% if project.status == 'in_progress' %}
-                                        (進行中)
-                                    {% elif project.status == 'rejected' %}
-                                        (已退件)
-                                    {% elif project.status == 'pending_approval' %}
-                                        (等待驗收)
-                                    {% elif project.status == 'completed' %}
-                                        (已結案)
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>你目前沒有任何已得標的專案。</p>
-                {% endif %}
-            </div>
+        /* Radio 選項樣式 (通用) */
+        .radio-item-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            color: #444;
+            white-space: nowrap; /* 關鍵：強制文字不換行 */
+        }
+        .radio-item-label input[type="radio"] {
+            accent-color: #1d3a5a; /* 深藍色選取圈 */
+            cursor: pointer;
+            margin: 0;
+        }
 
-            <div class="content-box">
-                <h3>我投標的案子 (審核中)</h3>
-                 {% if bid_projects %}
-                    <table class="table-styled">
-                        <thead>
-                            <tr>
-                                <th>專案標題</th>
-                                <th>委託人</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for project in bid_projects %}
-                            <tr>
-                                <td>{{ project.title }}</td>
-                                <td>{{ project.client_name }}</td>
-                                <td>
-                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>你目前沒有任何審核中的提案。</p>
-                {% endif %}
-            </div>
+        /* 第二欄：橫向排列的 Radio */
+        .radio-list-horizontal {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px; /* 選項之間的間距 */
+        }
+
+        /* 第三欄：垂直排列的 Radio */
+        .radio-list-vertical {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* 自訂日期區塊 */
+        .custom-date-box {
+            margin-top: 10px;
+            padding-left: 5px;
+        }
+        .custom-date-box input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        /* 搜尋框樣式修正：強制靠左 + 修正內距 */
+        .sleek-search-bar input[type="text"] {
+            text-align: left !important;
+            padding-left: 20px !important;
+        }
+
+        /* 確保提示文字 (Placeholder) 也強制靠左 */
+        .sleek-search-bar input[type="text"]::placeholder {
+            text-align: left !important;
+        }
+    </style>
+
+    <div class="dashboard-welcome">
+        <h2>歡迎回來，{{ user.username }}</h2>
+        <p class="subtitle">
+            目前市場上有 
+            <strong class="highlight-text">{{ stats.open }}</strong> 
+            個開放中的案件等待您的提案！
+        </p>
+    </div>
+
+    <div class="stats-overview-row">
+        <a href="{{ url_for('get_contractor_dashboard') }}?status=open" 
+           class="overview-card card-blue clickable-card {{ 'active-filter' if current_filter == 'open' else '' }}">
+            <div class="stat-label" style="color:#1976d2;">尋找新案件</div>
+            <div class="stat-number" style="color:#333;">{{ stats.open }}</div>
+        </a>
+
+        <a href="{{ url_for('get_contractor_dashboard') }}?status=in_progress" 
+           class="overview-card card-orange clickable-card {{ 'active-filter' if current_filter == 'in_progress' else '' }}">
+            <div class="stat-label" style="color:#e65100;">執行製作中</div>
+            <div class="stat-number" style="color:#333;">{{ stats.in_progress }}</div>
+        </a>
+
+        <a href="{{ url_for('get_contractor_dashboard') }}?status=pending_approval" 
+           class="overview-card card-yellow clickable-card {{ 'active-filter' if current_filter == 'pending_approval' else '' }}">
+            <div class="stat-label" style="color:#fbc02d;">等待驗收</div>
+            <div class="stat-number" style="color:#333;">{{ stats.pending }}</div>
+        </a>
+
+        <a href="{{ url_for('get_contractor_dashboard') }}?status=completed" 
+           class="overview-card card-gray clickable-card {{ 'active-filter' if current_filter == 'completed' else '' }}">
+            <div class="stat-label" style="color:#616161;">累計已結案</div>
+            <div class="stat-number" style="color:#333;">{{ stats.completed }}</div>
+        </a>
+    </div>
+
+    <div class="client-dashboard-grid"> 
+        
+        <div class="main-list-area">
             
-            <div class="content-box">
-                <h3>我未得標的案子</h3>
-                 {% if lost_projects %}
-                    <table class="table-styled">
-                        <thead>
-                            <tr>
-                                <th>專案標題</th>
-                                <th>最終狀態</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for project in lost_projects %}
-                            <tr>
-                                <td>{{ project.title }}</td>
-                                <td>
-                                    <strong>未被選中</strong>
-                                    ({{ project.status }})
-                                </td>
-                                <td>
-                                    <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">查看</a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p>你目前沒有任何未得標的專案。</p>
+            <div class="project-list-container">
+                
+                <div class="list-header">
+                    <h3>
+                        {% if current_filter == 'open' %} 🔍 尋找新案件
+                        {% elif current_filter == 'in_progress' %} 🔨 我正在執行的專案
+                        {% elif current_filter == 'pending_approval' %} ⏱️ 等待委託人驗收
+                        {% elif current_filter == 'completed' %} 🏆 我的結案紀錄
+                        {% endif %}
+                    </h3>
+                    <span class="badge-count">共 {{ projects|length }} 筆</span>
+                </div>
+
+                {% if current_filter == 'open' %}
+                <div style="padding: 20px 25px 0 25px;">
+                    <form action="{{ url_for('get_contractor_dashboard') }}" method="get" id="filterForm">
+                        <input type="hidden" name="status" value="open">
+            
+                        <div class="sleek-search-bar">
+                            <div class="search-input-wrapper">
+                                <input type="text" name="q" value="{{ request.query_params.get('q', '') }}" 
+                                       placeholder="輸入關鍵字搜尋案件 (例如: Logo, 網站) ...">
+                            </div>
+                            <button type="button" onclick="toggleFilters()" class="btn btn-secondary" style="border-radius: 30px; margin-left: 10px; white-space: nowrap;">
+                                篩選條件 <span id="filterArrow">▼</span>
+                            </button>
+                            <button type="submit" class="btn-search" style="margin-left: 10px;">搜尋</button>
+                        </div>
+
+                        <div id="advancedFilters" class="filter-panel" style="display: none; margin-top: 20px; border-radius: 8px;">
+                            
+                            <div class="filter-three-col-grid">
+                                
+                                <div class="filter-col">
+                                    <div class="filter-col-title">預算範圍</div>
+                                    <div class="budget-input-row">
+                                        <input type="number" id="minBudget" name="min_budget" placeholder="最低" value="{{ request.query_params.get('min_budget', '') }}">
+                                        <span style="color:#999;">~</span>
+                                        <input type="number" id="maxBudget" name="max_budget" placeholder="最高" value="{{ request.query_params.get('max_budget', '') }}">
+                                    </div>
+                                    <div class="quick-tags">
+                                        <button type="button" onclick="setBudget(null, 5000)" class="tag-btn">5k 以下</button>
+                                        <button type="button" onclick="setBudget(5000, 10000)" class="tag-btn">5k - 1萬</button>
+                                        <button type="button" onclick="setBudget(10000, 50000)" class="tag-btn">1萬 - 5萬</button>
+                                        <button type="button" onclick="setBudget(null, null)" class="tag-btn" style="background:#fff;">清除</button>
+                                    </div>
+                                </div>
+
+                                <div class="filter-col">
+                                    <div class="filter-col-title">提案截止</div>
+                                    <div class="radio-list-horizontal">
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="deadline_days" value="3" {% if request.query_params.get('deadline_days') == '3' %}checked{% endif %}>
+                                            3 天內
+                                        </label>
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="deadline_days" value="7" {% if request.query_params.get('deadline_days') == '7' %}checked{% endif %}>
+                                            7 天內
+                                        </label>
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="deadline_days" value="14" {% if request.query_params.get('deadline_days') == '14' %}checked{% endif %}>
+                                            14 天內
+                                        </label>
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="deadline_days" value="custom" id="customDeadlineRadio" onchange="toggleCustomDate(true)" {% if request.query_params.get('deadline_days') == 'custom' %}checked{% endif %}> 
+                                            自訂日期
+                                        </label>
+                                    </div>
+                                    <div id="customDateContainer" class="custom-date-box" style="display: none;">
+                                        <input type="date" name="custom_deadline" value="{{ request.query_params.get('custom_deadline', '') }}">
+                                    </div>
+                                </div>
+
+                                <div class="filter-col">
+                                    <div class="filter-col-title">排序方式</div>
+                                    <div class="radio-list-vertical">
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="sort" value="newest" {% if request.query_params.get('sort') == 'newest' or not request.query_params.get('sort') %}checked{% endif %}>
+                                            最新發布
+                                        </label>
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="sort" value="deadline" {% if request.query_params.get('sort') == 'deadline' %}checked{% endif %}>
+                                            截止日期最近
+                                        </label>
+                                        <label class="radio-item-label">
+                                            <input type="radio" name="sort" value="budget_high" {% if request.query_params.get('sort') == 'budget_high' %}checked{% endif %}>
+                                            預算由高到低
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="filter-actions" style="display: flex; justify-content: flex-end; gap: 15px;">
+                                <a href="{{ url_for('get_contractor_dashboard') }}?status=open" 
+                                    class="btn btn-secondary btn-sm">
+                                    清除所有條件
+                                </a>
+                                <button type="submit" class="btn btn-primary btn-sm">套用篩選</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
                 {% endif %}
+                <div class="list-body">
+                    {% if projects %}
+                        {% for project in projects %}
+                        <div class="project-item">
+                            <div class="project-main-info">
+                                <div class="project-title-row">
+                                    <h4 class="project-name">{{ project.title }}</h4>
+                                    
+                                    {% if current_filter == 'open' %}
+                                        {% if project.has_proposed %}
+                                            <span class="status-badge-sm badge-blue">✅ 已投標</span>
+                                        {% else %}
+                                            <span class="status-badge-sm badge-green">開放中</span>
+                                        {% endif %}
+                                    {% else %}
+                                        {% if project.status == 'in_progress' %}
+                                            <span class="status-badge-sm badge-orange">執行中</span>
+                                        {% elif project.status == 'rejected' %}
+                                            <span class="status-badge-sm badge-red">須修改</span>
+                                        {% elif project.status == 'pending_approval' %}
+                                            <span class="status-badge-sm badge-yellow">待驗收</span>
+                                        {% elif project.status == 'completed' %}
+                                            <span class="status-badge-sm badge-gray">已結案</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                                    
+                                <div class="project-meta-row">
+                                    <span>
+                                        委託人：
+                                        <a href="{{ url_for('view_user_profile', user_id=project.client_id) }}" 
+                                            class="user-link">
+                                            {{ project.client_name }}
+                                        </a>
+                                    </span>
+                                    <span class="divider">|</span>
+                                        
+                                    <span style="color: #2e7d32; font-weight: bold;">
+                                        💰 {{ project.budget if project.budget else '預算未公開' }}
+                                    </span>
+                                    <span class="divider">|</span>
+
+                                    <span>
+                                        {% if project.deadline %}
+                                            截止：{{ project.deadline.strftime('%Y/%m/%d') }}
+                                        {% else %}
+                                            無截止期限
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                
+                                {% if current_filter == 'open' %}
+                                <p style="margin: 8px 0 0 0; color: #777; font-size: 0.9em; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;">
+                                    {{ project.description }}
+                                </p>
+                                {% endif %}
+                            </div>
+                                
+                            <div class="project-action">
+                                <a href="{{ url_for('get_contractor_project_details', project_id=project.id) }}" 
+                                    class="btn btn-secondary btn-sm">
+                                    {% if current_filter == 'open' %}
+                                        詳情 / 報價
+                                    {% else %}
+                                        管理專案
+                                    {% endif %}
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-list-state">
+                            <div class="empty-icon">📭</div>
+                            <p>
+                                {% if current_filter == 'open' and request.query_params.get('q') %}
+                                    找不到符合「{{ request.query_params.get('q') }}」的案件。
+                                {% elif current_filter == 'open' %}
+                                    目前市場上沒有開放中的案件。
+                                {% else %}
+                                    此分類下目前沒有專案。
+                                {% endif %}
+                            </p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div> 
+        </div>
+
+        <div class="side-action-area">
+            
+            <div class="project-list-container">
+                <div class="list-header">
+                    <h3>💡 接案小撇步</h3>
+                </div>
+                <div class="list-body scrollable-list-body">
+                    
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>👉 如何寫出好提案？</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>吸引人的提案應該包含：</p>
+                            <ul>
+                                <li><strong>針對性：</strong>直接回應委託人的核心需求，避免罐頭訊息。</li>
+                                <li><strong>實力證明：</strong>附上與該專案高度相關的過往作品集。</li>
+                                <li><strong>明確報價：</strong>列出預算分配與預計工時，展現專業度。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>👉 專案執行注意事項</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>順利結案的關鍵在於溝通：</p>
+                            <ul>
+                                <li><strong>主動回報：</strong>定期更新進度，讓委託人安心。</li>
+                                <li><strong>善用工具：</strong>使用 Issue Tracker 記錄修改需求與溝通歷程。</li>
+                                <li><strong>檔案版本：</strong>交付檔案時清楚標示版號 (v1, v2...)。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>👉 遇到爭議怎麼辦？</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>保持理性溝通是解決問題的第一步：</p>
+                            <ol style="padding-left: 20px; margin-top: 10px;">
+                                <li>確認需求是否超出原定報價範圍。</li>
+                                <li>若無法達成共識，請勿私下交易。</li>
+                                <li>可申請平台介入仲裁，保障雙方權益。</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                </div>
             </div>
 
-        </div> </div> {% endblock %}
+        </div>
+
+    </div>
+
+    <script>
+        function toggleAccordion(header) {
+            const item = header.parentElement;
+            item.classList.toggle('active');
+        }
+
+        // 新的篩選器邏輯
+        function setBudget(min, max) {
+            document.getElementById('minBudget').value = min || '';
+            document.getElementById('maxBudget').value = max || '';
+        }
+
+        function toggleFilters() {
+            const filters = document.getElementById('advancedFilters');
+            const arrow = document.getElementById('filterArrow');
+            
+            if (filters.style.display === 'none') {
+                filters.style.display = 'block';
+                // 觸發 CSS 動畫 (如果有的話)
+                arrow.innerHTML = '▲';
+            } else {
+                filters.style.display = 'none';
+                arrow.innerHTML = '▼';
+            }
+        }
+
+        function toggleCustomDate(show) {
+            const container = document.getElementById('customDateContainer');
+            if (show) {
+                container.style.display = 'block';
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        // 頁面加載時初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 監聽 Radio Button 變更，如果選了 3/7/14 天，就隱藏自訂日期
+            document.querySelectorAll('input[name="deadline_days"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    if (e.target.value !== 'custom') {
+                        toggleCustomDate(false);
+                    }
+                });
+            });
+
+            // 如果 URL 裡面有選 custom，載入時要打開日期選單
+            if (document.getElementById('customDeadlineRadio') && document.getElementById('customDeadlineRadio').checked) {
+                toggleCustomDate(true);
+            }
+        });
+    </script>
+{% endblock %}

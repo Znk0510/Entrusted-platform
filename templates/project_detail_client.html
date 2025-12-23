@@ -1,63 +1,5 @@
 {% extends "layout.html" %}
 
-{% block head %}
-<style>
-
-.rating-tooltip h4 {
-    margin: 0 0 6px 0;
-    font-size: 15px;
-}
-
-.rating-tooltip .comment {
-    font-size: 13px;
-    color: #555;
-    margin-top: 6px;
-    border-top: 1px dashed #eee;
-    padding-top: 4px;
-}
-
-.contractor-name {
-    cursor: pointer;
-    color: #0d6efd;
-    text-decoration: underline;
-}
-
-.rating-tooltip {
-    position: fixed;              /* 關鍵：不受表格影響 */
-    width: 300px;
-    background: #ffffff;
-    border-radius: 10px;
-    padding: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-    z-index: 9999;                /* 永遠在最上層 */
-    font-size: 14px;
-    line-height: 1.4;
-}
-
-.rating-tooltip.hidden {
-    display: none !important;
-}
-.rating-tooltip h4 {
-    margin: 0 0 8px 0;
-    font-size: 15px;
-    font-weight: bold;
-}
-
-.rating-tooltip .avg {
-    margin-bottom: 6px;
-}
-
-.rating-tooltip .comment {
-    font-size: 13px;
-    color: #555;
-    margin-top: 6px;
-    border-top: 1px dashed #eee;
-    padding-top: 6px;
-}
-
-</style>
-{% endblock %}
-
 {% block title %}專案詳情: {{ project.title }}{% endblock %}
 
 {% block content %}
@@ -69,289 +11,286 @@
         <p class="alert alert-error">{{ error }}</p>
     {% endif %}
 
-    <div class="content-box">
-        <h2>{{ project.title }}</h2>
-        <p><strong>狀態：</strong> {{ project.status }}</p>
-        
-        <p><strong>需求描述：</strong><br>
-            <span style="white-space: pre-wrap;">{{ project.description }}</span>
-        </p>
+    <div class="stepper-wrapper" style="margin-top: 20px; margin-bottom: 40px;">
+        <div class="stepper-item {{ 'completed' if project.status in ['in_progress', 'pending_approval', 'completed', 'rejected'] else ('active' if project.status == 'open') }}">
+            <div class="step-counter">1</div>
+            <div class="step-name">開放提案</div>
+        </div>
+        <div class="stepper-item {{ 'completed' if project.status in ['pending_approval', 'completed'] else ('active' if project.status == 'in_progress' or project.status == 'rejected') }}">
+            <div class="step-counter">2</div>
+            <div class="step-name">執行製作</div>
+        </div>
+        <div class="stepper-item {{ 'completed' if project.status == 'completed' else ('active' if project.status == 'pending_approval') }}">
+            <div class="step-counter">3</div>
+            <div class="step-name">驗收階段</div>
+        </div>
+        <div class="stepper-item {{ 'active' if project.status == 'completed' }}">
+            <div class="step-counter">4</div>
+            <div class="step-name">順利結案</div>
+        </div>
     </div>
-    
-    {% if project.status == 'open' %}
-        <a href="{{ url_for('get_edit_project_page', project_id=project.id) }}" class="btn btn-secondary" style="margin-top: 15px; margin-bottom: 15px;">
-            ✏️ 編輯專案
-        </a>
-    {% endif %}
 
-    {% if project.status == 'open' %}
-        <div class="content-box">
-            <h3>收到的提案 (選擇委託對象)</h3>
-            {% if proposals %}
-                <table class="table-styled">
-                    <thead>
-                        <tr>
-                            <th>接案人</th>
-                            <th>報價</th>
-                            <th>訊息</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for p in proposals %}
-                        <tr>
-                            <td style = "position: relative;">
-                                <span
-                                    class="contractor-name"
-                                    data-contractor-id="{{ p.contractor_id }}"
-                                >
-                                    {{ p.contractor_name }}
-                                </span>
-                            </td>
-
-                            <td>$ {{ "%.2f"|format(p.quote) }}</td>
-                            <td>{{ p.message }}</td>
-                            <td>
-                                <form method="POST" action="{{ url_for('select_proposal', project_id=project.id, proposal_id=p.id) }}" style="margin: 0;">
-                                    <button type="submit" class="btn btn-primary">選擇此提案</button>
-                                </form>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            {% else %}
-                <p>目前尚未收到任何提案。</p>
-            {% endif %}
-        </div>
-    {% endif %}
-    
-
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-
-    const tooltip = document.getElementById("rating-tooltip");
-    const tooltipContent = document.getElementById("tooltip-content");
-    let hideTimer = null;
-
-    document.querySelectorAll(".contractor-name").forEach(el => {
-
-        el.addEventListener("mouseenter", async (e) => {
-            clearTimeout(hideTimer);
-
-            const contractorId = el.dataset.contractorId;
-
-            tooltip.style.left = e.clientX + 15 + "px";
-            tooltip.style.top  = e.clientY + 15 + "px";
-            tooltip.classList.remove("hidden");
-            tooltipContent.innerHTML = "載入中...";
-
-            try {
-                const res = await fetch(`/api/contractors/${contractorId}/rating-preview`);
-                const data = await res.json();
-
-                if (!data.summary || data.summary.rating_count === 0) {
-                    tooltipContent.innerHTML = "<p>尚無評價</p>";
-                } else {
-                    tooltipContent.innerHTML = `
-                        <h4>平均評價（${data.summary.rating_count} 筆）</h4>
-                        <div class="avg">成果品質：${Number(data.summary.output_quality_avg).toFixed(1)}</div>
-                        <div class="avg">執行效率：${Number(data.summary.efficiency_avg).toFixed(1)}</div>
-                        <div class="avg">合作態度：${Number(data.summary.attitude_avg).toFixed(1)}</div>
-                        ${data.comments.map(c =>
-                            `<div class="comment">「${c.overall_comment}」</div>`
-                        ).join("")}
-                    `;
-                }
-            } catch (err) {
-                tooltipContent.innerHTML = "<p>載入失敗</p>";
-                console.error(err);
-            }
-        });
-
-        el.addEventListener("mouseleave", () => {
-            hideTimer = setTimeout(() => {
-                tooltip.classList.add("hidden");
-            }, 150);
-        });
-    });
-
-    tooltip.addEventListener("mouseenter", () => {
-        clearTimeout(hideTimer);
-    });
-
-    tooltip.addEventListener("mouseleave", () => {
-        tooltip.classList.add("hidden");
-    });
-
-});
-</script>
-
-
-
-    {% if project.status == 'pending_approval' %}
-        <div class="content-box">
-            <h3>結案管理 (退件 / 接受結案)</h3>
-            <p>接案人已上傳結案檔案，請檢視檔案並執行結案或退件。</p>
-            
-            <form method="POST" action="{{ url_for('manage_case', project_id=project.id) }}" style="display: inline-block; margin-right: 10px;">
-                <input type="hidden" name="action" value="accept">
-                <button type="submit" class="btn btn-primary">✅ 接受結案</button>
-            </form>
-            
-            <form method="POST" action="{{ url_for('manage_case', project_id=project.id) }}" style="display: inline-block;">
-                <input type="hidden" name="action" value="reject">
-                <button type="submit" class="btn" style="background-color: #dc3545; color: white; border-color: #dc3545;">❌ 退件</button>
-            </form>
-        </div>
-    {% endif %}
-
-    <!-- Issue -->
-    <!-- 只要不是 open，都顯示此區塊，包含 completed -->
-    {% if project.status != 'open' %}
-    <div class="content-box" style="border-top: 5px solid var(--primary-color);">
-        <h2>Issue Tracker (問題追蹤紀錄)</h2>
+    <div class="detail-layout-grid">
         
-        {% if project.status == 'completed' %}
-            <p>專案已結案，以下為歷史溝通紀錄。</p>
-        {% else %}
-            <p>如果你對交付的檔案有問題，請在此建立 Issue，直到問題解決後再結案。</p>
-        {% endif %}
-        
-        <!-- 只有在「未結案」時，才顯示 "新增問題" 的表單 -->
-        {% if project.status != 'completed' %}
-        <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
-            <h4>+ 新增問題 (Issue)</h4>
-            <form method="POST" action="{{ url_for('create_issue', project_id=project.id) }}">
-                <div class="form-group">
-                    <input type="text" name="title" placeholder="問題標題 (例如: 字體太小)" required style="margin-bottom: 10px;">
-                    <textarea name="description" placeholder="詳細描述..." rows="2" required></textarea>
-                </div>
-                <button type="submit" class="btn btn-primary btn-sm">發布 Issue</button>
-            </form>
-        </div>
-        {% endif %}
+        <div class="detail-main">
+            
+            <div class="content-box" style="margin: 0;">
+                <h2 style="margin-bottom: 15px;">{{ project.title }}</h2>
+                <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 20px;">
+                
+                <h4 style="margin-bottom: 10px; color: var(--primary-color);">需求詳情</h4>
+                <p style="white-space: pre-wrap; color: #555; line-height: 1.8;">{{ project.description }}</p>
+            </div>
 
-        <!-- Issue 列表 -->
-        {% if issues %}
-            {% for issue in issues %}
-            <div class="issue-card">
-                <div class="issue-header">
-                    <div>
-                        <span class="issue-status-{{ issue.status }}">
-                            {{ '已解決' if issue.status == 'resolved' else '待解決' }}
-                        </span>
-                        <strong style="font-size: 1.1em; margin-left: 10px;">{{ issue.title }}</strong>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">{{ issue.description }}</div>
+            {% if project.status == 'open' %}
+                <div class="content-box" style="margin: 0; background-color: #f8fbff; border: 1px solid #dbeafe;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">收到的提案 ({{ proposals|length }})</h3>
                     </div>
                     
-                    <!-- 只有在「未結案」且 Issue 還是 open 時，才顯示 "標記為已解決" 按鈕 -->
-                    {% if issue.status == 'open' and project.status != 'completed' %}
-                    <form method="POST" action="{{ url_for('resolve_issue', issue_id=issue.id) }}">
-                        <button type="submit" class="btn btn-sm" style="background-color: #28a745; color: white;">✔ 標記為已解決</button>
-                    </form>
-                    {% endif %}
-                </div>
-
-                <!-- 留言區 -->
-                <div class="comments-section">
-                    {% for comment in issue.comments %}
-                        <div class="comment {{ comment.role }}">
-                            <div class="comment-meta">{{ comment.username }} ({{ '我' if comment.user_id == user.id else '對方' }}) - {{ comment.created_at.strftime('%m/%d %H:%M') }}</div>
-                            {{ comment.message }}
+                    {% if proposals %}
+                        <div class="proposal-grid">
+                            {% for p in proposals %}
+                            <div class="proposal-card">
+                                <div class="proposal-header">
+                                    <div class="user-info">
+                                        <div class="avatar-placeholder">{{ p.contractor_name[0]|upper }}</div>
+                                        <div>
+                                            <a href="{{ url_for('view_user_profile', user_id=p.contractor_id) }}" 
+                                               class="user-link" 
+                                               data-id="{{ p.contractor_id }}"
+                                               style="font-weight: bold; color: var(--dark-text);">
+                                                {{ p.contractor_name }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <div class="proposal-price">
+                                        <span class="price-tag">${{ "%.0f"|format(p.quote) }}</span>
+                                    </div>
+                                </div>
+                                <div class="proposal-body">
+                                    <p class="message-preview">"{{ p.message }}"</p>
+                                    {% if p.proposal_file %}
+                                        <a href="/client/download?path={{ p.proposal_file }}" target="_blank" class="file-tag">📄 下載計畫書</a>
+                                    {% endif %}
+                                </div>
+                                <div class="proposal-footer">
+                                    <form method="POST" action="{{ url_for('select_proposal', project_id=project.id, proposal_id=p.id) }}" style="margin: 0;">
+                                        <button type="submit" class="btn btn-primary" style="width: 100%;" onclick="return confirm('確定要選擇這位接案人嗎？')">
+                                            🤝 選擇此提案
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
                         </div>
-                    {% endfor %}
-                    {% if not issue.comments %}
-                        <p style="color: #aaa; text-align: center;">尚無留言</p>
+                    {% else %}
+                        <p style="color: #888; text-align: center; padding: 20px;">目前尚未收到提案。</p>
                     {% endif %}
                 </div>
+            {% endif %}
 
-                <!-- 只有在「未結案」且 Issue 還是 open 時，才顯示 "回覆" 表單 -->
-                {% if issue.status == 'open' and project.status != 'completed' %}
-                <form method="POST" action="{{ url_for('client_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px;">
-                    <input type="text" name="message" placeholder="回覆此問題..." required style="flex-grow: 1;">
-                    <button type="submit" class="btn btn-secondary btn-sm">送出</button>
-                </form>
+            {% if project.status != 'open' %}
+            <div class="content-box" style="margin: 0;">
+                <h3 style="margin-bottom: 15px;">📂 檔案版本紀錄</h3>
+                {% if files %}
+                    <table class="table-styled" style="margin: 0;">
+                        <thead>
+                            <tr>
+                                <th>檔名</th>
+                                <th>版號</th>
+                                <th>時間</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                                <tr>
+                                    <td>{{ file.filename }}</td>
+                                    <td>v{{ file.id }}</td>
+                                    <td>{{ file.uploaded_at.strftime('%m/%d %H:%M') }}</td>
+                                    <td><a href="/client/download?path={{ file.filepath }}" target="_blank" class="btn btn-secondary btn-sm">下載</a></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p style="color: #888;">目前沒有已上傳的檔案。</p>
                 {% endif %}
             </div>
-            {% endfor %}
-        {% else %}
-            <p>此專案沒有任何 Issue 紀錄。</p>
-        {% endif %}
-    </div>
-    {% endif %}
+            {% endif %}
 
-    {% if project.contractor_id %}
-        <div class="content-box">
-            <p><strong>已選定接案人：</strong> {{ project.contractor_name }} (ID: {{ project.contractor_id }})</p>
-        </div>
-    {% endif %}
+            {% if project.status != 'open' %}
+            <div class="content-box" style="margin: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">Issue Tracker (溝通紀錄)</h3>
+                    {% if project.status != 'completed' %}
+                        <button onclick="document.getElementById('new-issue-form').style.display='block'" class="btn btn-secondary btn-sm">+ 新增問題</button>
+                    {% endif %}
+                </div>
+                {% if project.status != 'completed' %}
+                <div id="new-issue-form" style="display: none; background: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                    <form method="POST" action="{{ url_for('create_issue', project_id=project.id) }}">
+                        <input type="text" name="title" placeholder="標題..." required style="width: 100%; padding: 8px; margin-bottom: 10px;">
+                        <textarea name="description" placeholder="描述..." rows="2" required style="width: 100%; padding: 8px; margin-bottom: 10px;"></textarea>
+                        <button type="submit" class="btn btn-primary btn-sm">發布</button>
+                    </form>
+                </div>
+                {% endif %}
 
-    <div class="content-box">
-        <h3>結案檔案列表</h3>
-        {% if files %}
-            <ul>
-                {% for file in files %}
-                    <li>
-                        {{ file.filename }} (由 {{ file.uploader_name }} 上傳於 {{ file.uploaded_at.strftime('%Y-%m-%d') }})
-                        </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p>目前沒有已上傳的結案檔案。</p>
-        {% endif %}
-    </div>
-    
-    
-{% if project.status == 'completed' and can_rate %}
+                {% if issues %}
+                    {% for issue in issues %}
+                    <div class="issue-card">
+                        <div class="issue-header">
+                            <div>
+                                <span class="issue-status-{{ issue.status }}">{{ '已解決' if issue.status == 'resolved' else '待解決' }}</span>
+                                <strong style="margin-left: 10px;">{{ issue.title }}</strong>
+                            </div>
+                            {% if issue.status == 'open' and project.status != 'completed' %}
+                            <form method="POST" action="{{ url_for('resolve_issue', issue_id=issue.id) }}">
+                                <button type="submit" class="btn btn-sm" style="color: green; background: none; border: 1px solid green;">✔ 標記解決</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        <p style="color: #666; margin: 10px 0;">{{ issue.description }}</p>
+                        <div class="comments-section" style="background: #fafafa; padding: 10px;">
+                            {% for comment in issue.comments %}
+                                <div class="comment">
+                                    <strong>{{ '我' if comment.user_id == project.client_id else '接案人' }}:</strong> {{ comment.message }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                        {% if issue.status == 'open' %}
+                        <form method="POST" action="{{ url_for('client_comment_issue', issue_id=issue.id) }}" style="display: flex; gap: 10px; margin-top: 10px;">
+                            <input type="text" name="message" placeholder="回覆..." required style="flex-grow: 1; padding: 5px;">
+                            <button type="submit" class="btn btn-secondary btn-sm">送出</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="color: #aaa;">尚無 Issue 紀錄。</p>
+                {% endif %}
+            </div>
+            {% endif %}
 
-<div class="content-box" style="border-top: 5px solid #ffc107;">
-    <h3>⭐ 接案人評價</h3>
+        </div> <div class="detail-sidebar">
+            
+            <div class="sidebar-card">
+                <span class="sidebar-label">目前狀態</span>
+                <div style="margin-bottom: 15px;">
+                    {% if project.status == 'open' %}
+                        <span class="status-badge status-open" style="font-size: 1em; margin:0;">開放提案中</span>
+                    {% elif project.status == 'in_progress' %}
+                        <span class="status-badge status-progress" style="font-size: 1em; margin:0;">進行中</span>
+                    {% elif project.status == 'pending_approval' %}
+                        <span class="status-badge status-pending" style="font-size: 1em; margin:0;">等待驗收</span>
+                    {% elif project.status == 'completed' %}
+                        <span class="status-badge status-completed" style="font-size: 1em; margin:0;">已結案</span>
+                    {% endif %}
+                </div>
 
-    <form method="POST" action="{{ url_for('create_rating') }}">
-        <input type="hidden" name="project_id" value="{{ project.id }}">
-        <input type="hidden" name="ratee_id" value="{{ contractor.id }}">
+                <span class="sidebar-label">預算範圍</span>
+                <div class="sidebar-value" style="margin-bottom: 15px; color: #2e7d32;">
+                    {{ project.budget if project.budget else '未設定' }}
+                </div>
 
-        <div class="form-group">
-            <label>成果品質</label>
-            <select name="output_quality_score" required>
-                {% for i in range(1,6) %}
-                <option value="{{ i }}">{{ i }}</option>
-                {% endfor %}
-            </select>
-        </div>
+                <span class="sidebar-label">提案截止日期</span>
+                <div class="sidebar-value" style="margin-bottom: 15px;">
+                    {{ project.deadline.strftime('%Y-%m-%d %H:%M') if project.deadline else '無' }}
+                </div>
 
-        <div class="form-group">
-            <label>執行效率</label>
-            <select name="execution_efficiency_score" required>
-                {% for i in range(1,6) %}
-                <option value="{{ i }}">{{ i }}</option>
-                {% endfor %}
-            </select>
-        </div>
+                <span class="sidebar-label">委託人</span>
+                <div class="sidebar-value">
+                    {{ project.client_name }}
+                </div>
+            </div>
 
-        <div class="form-group">
-            <label>合作態度</label>
-            <select name="contractor_attitude_score" required>
-                {% for i in range(1,6) %}
-                <option value="{{ i }}">{{ i }}</option>
-                {% endfor %}
-            </select>
-        </div>
+            <div class="sidebar-card">
+                <span class="sidebar-label">專案操作</span>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                    {% if project.status == 'open' %}
+                        <a href="{{ url_for('get_edit_project_page', project_id=project.id) }}" class="btn btn-secondary" style="text-align: center;">
+                            ✏️ 編輯專案
+                        </a>
+                    {% endif %}
+                    
+                    {% if project.status == 'pending_approval' %}
+                        <form method="POST" action="{{ url_for('approve_project', project_id=project.id) }}" style="width: 100%;">
+                            <button type="submit" class="btn btn-primary" style="width: 100%;">✅ 驗收通過</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('reject_project', project_id=project.id) }}" style="width: 100%;">
+                            <button type="submit" class="btn" style="width: 100%; background-color: #ffebee; color: #c62828; border: 1px solid #ffcdd2;">❌ 退件修改</button>
+                        </form>
+                    {% endif %}
 
-        <div class="form-group">
-            <label>整體評論</label>
-            <textarea name="overall_comment" rows="3"></textarea>
-        </div>
+                    {% if project.status == 'completed' %}
+                        
+                        {% if my_review %}
+                            <div class="content-box" style="border-top: 5px solid #28a745; background-color: #f9fff9; padding: 15px;">
+                                <h4 style="color: #28a745; margin-top:0;">✅ 您已評價</h4>
+                                
+                                <div style="opacity: 0.8; pointer-events: none;">
+                                    <div style="margin-bottom: 10px;">
+                                        <label style="font-size: 0.9em; display:block;">產出品質 <span style="float:right; color:#28a745; font-weight:bold;">{{ my_review.rating_1 }}</span></label>
+                                        <input type="range" min="1" max="5" value="{{ my_review.rating_1 }}" disabled style="width:100%;">
+                                    </div>
 
-        <button type="submit" class="btn btn-primary">送出評價</button>
-    </form>     
-</div>
+                                    <div style="margin-bottom: 10px;">
+                                        <label style="font-size: 0.9em; display:block;">執行效率 <span style="float:right; color:#28a745; font-weight:bold;">{{ my_review.rating_2 }}</span></label>
+                                        <input type="range" min="1" max="5" value="{{ my_review.rating_2 }}" disabled style="width:100%;">
+                                    </div>
 
-{% endif %}
+                                    <div style="margin-bottom: 10px;">
+                                        <label style="font-size: 0.9em; display:block;">合作態度 <span style="float:right; color:#28a745; font-weight:bold;">{{ my_review.rating_3 }}</span></label>
+                                        <input type="range" min="1" max="5" value="{{ my_review.rating_3 }}" disabled style="width:100%;">
+                                    </div>
+                                </div>
 
-    <br>
-    <a href="{{ url_for('get_client_dashboard') }}" class="btn btn-secondary">返回儀表板</a>
-    
+                                <div style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ccc;">
+                                    <strong style="font-size: 0.9em;">您的評論：</strong>
+                                    <p style="font-size: 0.9em; color: #555; margin-top: 5px;">{{ my_review.comment }}</p>
+                                </div>
+                            </div>
 
-{% endblock %}
+                        {% else %}
+                            <div class="content-box" style="border-top: 5px solid #ffc107; padding: 15px;">
+                                <h4 style="margin-top:0;">⭐ 評價接案人</h4>
+                                <p style="font-size: 0.9em; margin-bottom: 10px;">請對 <strong>{{ project.contractor_name }}</strong> 評分。</p>
+                                
+                                <form method="POST" action="{{ url_for('submit_review', project_id=project.id) }}">
+                                    
+                                    <div class="rating-group" style="padding: 0; background: none; margin-bottom: 5px;">
+                                        <label style="font-size: 0.9em;">產出品質 <span style="float:right; color:var(--primary-color);">5</span></label>
+                                        <input type="range" name="rating_1" min="1" max="5" value="5" oninput="this.previousElementSibling.children[0].textContent = this.value">
+                                    </div>
+
+                                    <div class="rating-group" style="padding: 0; background: none; margin-bottom: 5px;">
+                                        <label style="font-size: 0.9em;">執行效率 <span style="float:right; color:var(--primary-color);">5</span></label>
+                                        <input type="range" name="rating_2" min="1" max="5" value="5" oninput="this.previousElementSibling.children[0].textContent = this.value">
+                                    </div>
+
+                                    <div class="rating-group" style="padding: 0; background: none; margin-bottom: 5px;">
+                                        <label style="font-size: 0.9em;">合作態度 <span style="float:right; color:var(--primary-color);">5</span></label>
+                                        <input type="range" name="rating_3" min="1" max="5" value="5" oninput="this.previousElementSibling.children[0].textContent = this.value">
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 10px;">
+                                        <textarea name="comment" rows="3" required placeholder="寫下評論..." style="width: 100%; font-size: 0.9em; padding: 8px;"></textarea>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary btn-sm" style="width: 100%;">送出評價</button>
+                                </form>
+                            </div>
+                        {% endif %}
+
+                    {% endif %}
+                </div>
+            </div>
+            <!--
+            <a href="{{ url_for('get_client_dashboard') }}" style="text-align: center; display: block; color: #666; font-size: 0.9em;">
+                ← 返回儀表板
+            </a>
+            -->
+            <a href="{{ url_for('get_client_dashboard') }}" class="btn btn-secondary">返回儀表板</a>
+        </div> </div> {% endblock %}

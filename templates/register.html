@@ -1,48 +1,57 @@
 {% extends "layout.html" %}
 
-{% block title %}註冊新帳號{% endblock %}
+{% block title %}加入平台{% endblock %}
 
 {% block content %}
-    <div class="form-wrapper">
-        <h2>註冊新帳號</h2>
-
-        {% if error %}
-            <p class="alert alert-error">{{ error }}</p>
-        {% endif %}
-
+<div class="auth-container-wide" style="max-width: 500px; margin: 0 auto;">
+    <div class="content-box">
+        <h2 style="text-align: center; margin-bottom: 30px;">建立您的帳號</h2>
+        
         <form method="POST" action="{{ url_for('handle_registration') }}">
-            
-            <div class="form-group">
-                <label for="username">使用者名稱：</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="email">電子郵件：</label>
-                <input type="email" id="email" name="email" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="password">密碼：</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            
-            <div class="form-group form-group-radio">
-                <label>註冊身份：</label><br>
+            <p style="font-weight: bold; margin-bottom: 15px;">請選擇您的身份：</p>
+            <div class="role-tabs-wrapper">
                 <input type="radio" id="role_client" name="role" value="client" checked>
-                <label for="role_client">我是委託人 (發案)</label>
-                <br>
+                <label for="role_client" class="tab-label">
+                    <span class="icon">👔</span>
+                    <strong>委託人</strong>
+                    <span style="display: block; font-size: 0.8rem; color: #666;">我要發案</span>
+                </label>
+
                 <input type="radio" id="role_contractor" name="role" value="contractor">
-                <label for="role_contractor">我是接案人 (接案)</label>
+                <label for="role_contractor" class="tab-label">
+                    <span class="icon">🎨</span>
+                    <strong>接案人</strong>
+                    <span style="display: block; font-size: 0.8rem; color: #666;">找尋工作</span>
+                </label>
             </div>
-            
-            <div class="form-group">
-                <button type="submit" class="btn btn-primary" style="width: 100%;">註冊</button>
+
+            <div class="form-grid-compact">
+                {% if error %}
+                    <div class="alert alert-error-small">⚠️ {{ error }}</div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label for="username">顯示名稱</label>
+                    <input type="text" id="username" name="username" required placeholder="例如：Alex Chen">
+                </div>
+                
+                <div class="form-group">
+                    <label for="email">電子郵件</label>
+                    <input type="email" id="email" name="email" required placeholder="name@example.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">設定密碼</label>
+                    <input type="password" id="password" name="password" required placeholder="至少 6 位數">
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 20px;">立即註冊</button>
             </div>
         </form>
         
-        <p style="text-align: center; margin-top: 20px;">
-            已經有帳號了？ <a href="{{ url_for('get_login_page') }}">點此登入</a>
+        <p style="text-align: center; margin-top: 25px; color: var(--light-text);">
+            已經有帳號了？ <a href="{{ url_for('get_login_page') }}" style="font-weight: bold;">直接登入</a>
         </p>
     </div>
+</div>
 {% endblock %}

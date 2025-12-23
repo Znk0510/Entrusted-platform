@@ -1,0 +1,106 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ target_user.username }} 的個人檔案{% endblock %}
+
+{% block content %}
+
+    <div class="profile-hero">
+        <div>
+            {% if target_user.avatar %}
+                <img src="/{{ target_user.avatar }}" class="profile-avatar-large" alt="User Avatar">
+            {% else %}
+                <div class="profile-avatar-placeholder">
+                    {{ target_user.username[0] | upper }}
+                </div>
+            {% endif %}
+        </div>
+        
+        <div class="profile-info-main">
+            <h2 style="margin: 0;">{{ target_user.username }}</h2>
+            <span class="role-badge">{{ target_user.role | capitalize }}</span>
+            <p style="margin-top: 15px; color: #555; line-height: 1.5;">
+                {{ target_user.introduction if target_user.introduction else "這位使用者很懶，還沒有寫自我介紹。" }}
+            </p>
+            
+            {% if user and user.id == target_user.id %}
+                <a href="{{ url_for('edit_my_profile_page') }}" class="btn btn-secondary btn-sm" style="margin-top: 10px;">編輯個人資料</a>
+            {% endif %}
+        </div>
+
+        <div style="text-align: center; min-width: 120px;">
+            <div style="font-size: 2.5em; font-weight: bold; color: #ffc107;">
+                {{ stats.avg_rating }}
+            </div>
+            <div style="color: #ffc107; margin-bottom: 5px;">★★★★★</div>
+            <div style="color: #888; font-size: 0.9em;">共 {{ stats.count }} 則評價</div>
+        </div>
+    </div>
+
+    {% if stats.count > 0 %}
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div style="display: flex; justify-content: space-between;">
+                <span>{{ '需求合理性' if target_user.role == 'client' else '產出品質' }}</span>
+                <strong>{{ stats.dim1 }}</strong>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" style="width: {{ (stats.dim1 / 5) * 100 }}%;"></div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div style="display: flex; justify-content: space-between;">
+                <span>{{ '驗收難度' if target_user.role == 'client' else '執行效率' }}</span>
+                <strong>{{ stats.dim2 }}</strong>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" style="width: {{ (stats.dim2 / 5) * 100 }}%;"></div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div style="display: flex; justify-content: space-between;">
+                <span>合作態度</span>
+                <strong>{{ stats.dim3 }}</strong>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" style="width: {{ (stats.dim3 / 5) * 100 }}%;"></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="content-box">
+        <h3>歷史評價紀錄</h3>
+        {% if reviews %}
+            <div class="review-list">
+                {% for review in reviews %}
+                <div class="review-card" style="display: flex; gap: 15px; padding: 15px; border-bottom: 1px solid #eee;">
+                    <div style="flex-shrink: 0;">
+                        <a href="{{ url_for('view_user_profile', user_id=review.reviewer_id) }}">
+                            {% if review.reviewer_avatar %}
+                                <img src="/{{ review.reviewer_avatar }}" style="width: 40px; height: 40px; border-radius: 50%;">
+                            {% else %}
+                                <div style="width: 40px; height: 40px; background:#eee; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
+                                    {{ review.reviewer_name[0] }}
+                                </div>
+                            {% endif %}
+                        </a>
+                    </div>
+                    <div style="flex-grow: 1;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <strong>{{ review.reviewer_name }}</strong> 
+                            <span style="color: #ffc107;">★ {{ review.average_score }}</span>
+                        </div>
+                        <div style="font-size: 0.85em; color: #888; margin-bottom: 5px;">專案：{{ review.project_title }}</div>
+                        <p style="margin: 5px 0; color: #444;">{{ review.comment }}</p>
+                        <div style="font-size: 0.8em; color: #aaa;">{{ review.created_at.strftime('%Y-%m-%d') }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p style="color: #888; text-align: center; padding: 20px;">目前尚無評價。</p>
+        {% endif %}
+    </div>
+{% endblock %}

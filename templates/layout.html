@@ -5,21 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>工作委託平台 - {% block title %}{% endblock %}</title>
     
-    {% block head %}{% endblock %}
-    
     <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
-    
 
 </head>
 <body>
-
+    
     <header class="navbar">
         <div class="container">
             <a href="{{ url_for('root') }}" class="logo">工作委託平台</a>
             
             <ul class="nav-links">
+                <li><a href="{{ url_for('get_support_page') }}">客服中心</a></li>
+
                 {% if user %}
-                    <li><span>你好, {{ user.username }} ({{ user.role }})</span></li>
+                    <li>
+                        {% if user.avatar %}
+                            <img src="/{{ user.avatar }}" class="avatar-small" alt="Avatar">
+                        {% endif %}
+                        
+                        <a href="{{ url_for('view_user_profile', user_id=user.id) }}" style="font-weight: bold;">
+                            {{ user.username }} ({{ user.role }})
+                        </a>
+                    </li>
+                    <li><a href="{{ url_for('edit_my_profile_page') }}">設定</a></li>
                     <li><a href="{{ url_for('handle_logout') }}">登出</a></li>
                 {% else %}
                     <li><a href="{{ url_for('get_login_page') }}">登入</a></li>
@@ -29,20 +37,182 @@
         </div>
     </header>
 
-
-
     <main class="container">
         {% block content %}{% endblock %}
     </main>
-
-    <div id="rating-tooltip" class="rating-tooltip hidden">
-    <div id="tooltip-content">載入中...</div>
-    </div>
 
     <footer>
         <p>&copy; 2025 工作委託平台</p>
     </footer>
 
+    <div id="user-preview-popup">
+        <div class="preview-content">載入中...</div>
+    </div>
 
+    <div class="ai-widget-btn" onclick="toggleAIChat()">
+        🤖
+    </div>
+
+    <div class="ai-chat-box" id="aiChatBox">
+        <div class="ai-chat-header">
+            <span>🤖 專案描述小助手</span>
+            <span class="ai-close-btn" onclick="toggleAIChat()">×</span>
+        </div>
+        
+        <div class="ai-chat-body" id="aiChatBody">
+            <div class="chat-bubble ai">
+                嗨！我是您的 AI 助手。<br>
+                不知道怎麼寫需求嗎？告訴我你想做什麼，我幫你寫出專業的描述！
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typingIndicator">AI 正在思考中...</div>
+
+        <div class="ai-chat-footer">
+            <input type="text" id="aiInput" class="ai-chat-input" placeholder="輸入您的想法..." onkeypress="handleAIKeyPress(event)">
+            <button class="ai-send-btn" onclick="sendAIMessage()">➤</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            /* -----------------------------------
+               1. 使用者預覽邏輯
+               ----------------------------------- */
+            const popup = document.getElementById('user-preview-popup');
+            let fetchTimeout;
+
+            // 監聽所有帶有 .user-link 的元素
+            document.body.addEventListener('mouseover', function(e) {
+                const target = e.target.closest('.user-link');
+                if (!target) {
+                    popup.classList.remove('show');
+                    return;
+                }
+
+                const userId = target.getAttribute('data-id');
+                if (!userId) return;
+
+                // 定位框框
+                const rect = target.getBoundingClientRect();
+                const scrollY = window.scrollY;
+                const scrollX = window.scrollX;
+
+                popup.style.top = (rect.bottom + scrollY + 10) + 'px';
+                popup.style.left = (rect.left + scrollX) + 'px';
+                popup.classList.add('show');
+                popup.innerHTML = '<p style="color:#888; text-align:center;">載入中...</p>';
+
+                // 呼叫 API
+                clearTimeout(fetchTimeout);
+                fetchTimeout = setTimeout(() => {
+                    fetch(`/users/api/preview/${userId}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if(data.error) return;
+                            
+                            const avatarImg = data.avatar 
+                                ? `<img src="${data.avatar}" class="preview-avatar">` 
+                                : `<div class="preview-avatar" style="background:#eee; display:flex; align-items:center; justify-content:center; font-weight:bold;">${data.username[0].toUpperCase()}</div>`;
+
+                            popup.innerHTML = `
+                                <div class="preview-header">
+                                    ${avatarImg}
+                                    <div class="preview-info">
+                                        <h4>${data.username}</h4>
+                                        <span class="preview-role">${data.role}</span>
+                                    </div>
+                                </div>
+                                <div class="preview-stats">
+                                    <span>評分: <strong style="color:#ffc107;">${data.stats.rating}</strong></span>
+                                    <span>(${data.stats.count} 則評價)</span>
+                                </div>
+                            `;
+                        });
+                }, 100);
+            });
+
+            document.body.addEventListener('mouseout', function(e) {
+                if (!e.target.closest('.user-link')) {
+                    popup.classList.remove('show');
+                    clearTimeout(fetchTimeout);
+                }
+            });
+        });
+
+        /* -----------------------------------
+           2. AI 小助手邏輯 [本次新增]
+           ----------------------------------- */
+        
+        // 切換顯示/隱藏
+        function toggleAIChat() {
+            const box = document.getElementById('aiChatBox');
+            box.classList.toggle('show');
+            
+            // 自動聚焦輸入框
+            if (box.classList.contains('show')) {
+                setTimeout(() => document.getElementById('aiInput').focus(), 300);
+            }
+        }
+
+        // 處理 Enter 鍵
+        function handleAIKeyPress(e) {
+            if (e.key === 'Enter') {
+                sendAIMessage();
+            }
+        }
+
+        // 發送訊息邏輯
+        async function sendAIMessage() {
+            const input = document.getElementById('aiInput');
+            const body = document.getElementById('aiChatBody');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // 顯示使用者訊息
+            addMessage(message, 'user');
+            input.value = '';
+
+            // 顯示載入中
+            document.getElementById('typingIndicator').style.display = 'block';
+            body.scrollTop = body.scrollHeight; // 捲動到底部
+
+            try {
+                const response = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                
+                const data = await response.json();
+                
+                // 顯示 AI 回覆
+                if (data.reply) {
+                    // 將換行符號轉換為 <br> 以便在 HTML 顯示
+                    const formattedReply = data.reply.replace(/\n/g, '<br>');
+                    addMessage(formattedReply, 'ai');
+                } else {
+                    addMessage("發生錯誤，請稍後再試。", 'ai');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage("連線失敗，請檢查網路或 API Key。", 'ai');
+            } finally {
+                document.getElementById('typingIndicator').style.display = 'none';
+            }
+        }
+
+        // 輔助：新增訊息到畫面
+        function addMessage(text, sender) {
+            const body = document.getElementById('aiChatBody');
+            const div = document.createElement('div');
+            div.classList.add('chat-bubble', sender);
+            div.innerHTML = text; 
+            body.appendChild(div);
+            body.scrollTop = body.scrollHeight;
+        }
+    </script>
 </body>
 </html>

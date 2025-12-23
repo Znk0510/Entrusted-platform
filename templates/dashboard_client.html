@@ -1,57 +1,211 @@
 {% extends "layout.html" %}
 
-{% block title %}委託人儀表板{% endblock %}
+{% block title %}我的專案管理{% endblock %}
 
 {% block content %}
-    <h2>找專家</h2>
-    <p>你好，{{ user.username }}！這裡是你所有的專案。</p>
 
-    <a href="{{ url_for('get_create_project_page') }}" class="btn btn-primary" style="margin: 20px 0; display: inline-block;">
-        + 建立新專案
-    </a>
-    
-    <h3>我的專案列表 (歷史專案列表)</h3>
-    {% if projects %}
-        <table class="table-styled">
-            <thead>
-                <tr>
-                    <th>專案標題</th>
-                    <th>狀態</th>
-                    <th>建立日期</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for project in projects %}
-                <tr>
-                    <td>{{ project.title }}</td>
-                    <td>
-                        <strong>{{ project.status }}</strong>
-                        {% if project.status == 'open' %}
-                            (開放提案中)
-                        {% elif project.status == 'pending_approval' %}
-                            (等待驗收)
-                        {% elif project.status == 'in_progress' %}
-                            (進行中)
-                        {% elif project.status == 'rejected' %}
-                            (已退件)
-                        {% elif project.status == 'completed' %}
-                            (已結案)
-                        {% endif %}
-                    </td>
-                    <td>{{ project.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                    <td>
-                        <a href="{{ url_for('get_project_details', project_id=project.id) }}" class="btn btn-secondary">查看詳情</a>
-                        
-                        {% if project.status == 'open' %}
-                            <a href="{{ url_for('get_edit_project_page', project_id=project.id) }}" class="btn btn-secondary" style="margin-top: 5px;">編輯</a>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>你目前沒有任何專案。 <a href="{{ url_for('get_create_project_page') }}">建立一個新專案</a>！</p>
-    {% endif %}
+    <div class="dashboard-welcome">
+        <h2>歡迎回來，{{ user.username }}</h2>
+        <p class="subtitle">
+            您目前有 
+            <strong class="highlight-text">
+                {{ all_projects | selectattr('status', 'in', ['open', 'in_progress', 'pending_approval']) | list | length }}
+            </strong> 
+            個正在進行中的委託專案
+        </p>
+    </div>
+
+    <div class="stats-overview-row">
+        <a href="{{ url_for('get_client_dashboard') }}?status=open" 
+           class="overview-card card-blue clickable-card {{ 'active-filter' if current_filter == 'open' else '' }}">
+            <div class="stat-label" style="color:#1976d2;">開放提案中</div>
+            <div class="stat-number" style="color:#333;">
+                {{ all_projects | selectattr('status', 'equalto', 'open') | list | length }}
+            </div>
+        </a>
+
+        <a href="{{ url_for('get_client_dashboard') }}?status=in_progress" 
+           class="overview-card card-orange clickable-card {{ 'active-filter' if current_filter == 'in_progress' else '' }}">
+            <div class="stat-label" style="color:#e65100;">執行製作中</div>
+            <div class="stat-number" style="color:#333;">
+                {{ all_projects | selectattr('status', 'equalto', 'in_progress') | list | length }}
+            </div>
+        </a>
+
+        <a href="{{ url_for('get_client_dashboard') }}?status=pending_approval" 
+           class="overview-card card-yellow clickable-card {{ 'active-filter' if current_filter == 'pending_approval' else '' }}">
+            <div class="stat-label" style="color:#fbc02d;">等待驗收</div>
+            <div class="stat-number" style="color:#333;">
+                {{ all_projects | selectattr('status', 'equalto', 'pending_approval') | list | length }}
+            </div>
+        </a>
+
+        <a href="{{ url_for('get_client_dashboard') }}?status=completed" 
+           class="overview-card card-gray clickable-card {{ 'active-filter' if current_filter == 'completed' else '' }}">
+            <div class="stat-label" style="color:#616161;">累計已結案</div>
+            <div class="stat-number" style="color:#333;">
+                {{ all_projects | selectattr('status', 'equalto', 'completed') | list | length }}
+            </div>
+        </a>
+    </div>
+
+    <div class="client-dashboard-grid">
+        
+        <div class="main-list-area">
+            <div class="project-list-container">
+                <div class="list-header">
+                    <h3>
+                        {% if current_filter == 'open' %} 📂 開放中的專案
+                        {% elif current_filter == 'in_progress' %} 🔨 執行中的專案
+                        {% elif current_filter == 'pending_approval' %} ⏱️ 等待驗收的專案
+                        {% elif current_filter == 'completed' %} 🏆 已結案的專案
+                        {% else %} 我的委託列表 {% endif %}
+                    </h3>
+                    <span class="badge-count">共 {{ projects|length }} 筆</span>
+                </div>
+
+                <div class="list-body">
+                    {% if projects %}
+                        {% for project in projects %}
+                        <div class="project-item">
+                            <div class="project-main-info">
+                                <div class="project-title-row">
+                                    <h4 class="project-name">{{ project.title }}</h4>
+                                    {% if project.status == 'open' %}
+                                        <span class="status-badge-sm badge-blue">開放提案</span>
+                                    {% elif project.status == 'in_progress' %}
+                                        <span class="status-badge-sm badge-orange">執行中</span>
+                                    {% elif project.status == 'pending_approval' %}
+                                        <span class="status-badge-sm badge-yellow">待驗收</span>
+                                    {% elif project.status == 'rejected' %}
+                                        <span class="status-badge-sm badge-red">已退件</span>
+                                    {% elif project.status == 'completed' %}
+                                        <span class="status-badge-sm badge-gray">已結案</span>
+                                    {% endif %}
+                                </div>
+                                <div class="project-meta-row">
+                                    <span>📅 {{ project.created_at.strftime('%Y/%m/%d') }}</span>
+                                    <span class="divider">|</span>
+                                    <span>{{ project.proposal_count }} 提案</span>
+                                </div>
+                            </div>
+                            
+                            <div class="project-action">
+                                <a href="{{ url_for('get_project_details', project_id=project.id) }}" class="btn btn-secondary btn-sm">
+                                    查看詳情
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-list-state">
+                            <div class="empty-icon">
+                                {% if current_filter == 'completed' %} 🍃
+                                {% elif current_filter == 'in_progress' %} ☕
+                                {% else %} 📭 {% endif %}
+                            </div>
+                            <p>此狀態下目前沒有專案</p>
+                            {% if current_filter == 'open' %}
+                                <a href="{{ url_for('get_create_project_page') }}" class="btn-text">立即建立新委託 &rarr;</a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="side-action-area">
+            
+            <div class="project-list-container">
+                <div class="list-header">
+                    <h3>💡 快速行動</h3>
+                </div>
+                <div class="list-body" style="padding: 25px; text-align: center;">
+                    <p style="color: #666; font-size: 0.95em; margin-bottom: 20px; line-height: 1.5;">
+                        簡單描述想法，為您媒合專業人才。
+                    </p>
+                    <a href="{{ url_for('get_create_project_page') }}" class="btn btn-primary btn-block">
+                        + 發布新委託
+                    </a>
+                </div>
+            </div>
+
+            <div class="project-list-container">
+                <div class="list-header">
+                    <h3>新手指南</h3>
+                </div>
+                
+                <div class="list-body scrollable-list-body">
+                    
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>👉 如何撰寫好的需求描述？</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>一個好的需求描述能吸引更專業的提案。建議包含：</p>
+                            <ul>
+                                <li><strong>專案背景：</strong>為什麼要做這個？目標是什麼？</li>
+                                <li><strong>具體功能：</strong>例如「會員登入」、「購物車」、「自動發信」等。</li>
+                                <li><strong>風格參考：</strong>附上您喜歡的網站或設計圖連結。</li>
+                                <li><strong>預算與時程：</strong>明確的範圍能減少溝通成本。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>👉 驗收階段的注意事項</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>驗收是專案最重要的環節，請務必確認：</p>
+                            <ul>
+                                <li><strong>功能測試：</strong>所有功能是否如預期運作？</li>
+                                <li><strong>跨裝置檢視：</strong>在手機、平板、電腦上顯示是否正常？</li>
+                                <li><strong>交付物檢查：</strong>是否收到原始碼、設計原始檔或操作手冊？</li>
+                            </ul>
+                            <p style="margin-top:5px; color:#d9534f;">若有問題，請使用「退件修改」功能並具體說明原因。</p>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>👉 平台付款與保障機制</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>本平台採用<strong>第三方託管</strong>機制保障雙方：</p>
+                            <ol style="padding-left: 20px; margin-top: 10px;">
+                                <li>發案時，款項會先由平台暫存。</li>
+                                <li>專案進行中，款項安全保留。</li>
+                                <li>待您點擊<strong>「驗收通過」</strong>後，款項才會撥給接案人。</li>
+                            </ol>
+                            <p style="margin-top:5px;">若發生爭議，可申請平台介入仲裁。</p>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        function toggleAccordion(header) {
+            const item = header.parentElement;
+            
+            // 選擇性的功能：若想要「點開一個就關閉其他」，把下面這段註解拿掉
+            
+            const allItems = document.querySelectorAll('.accordion-item');
+            allItems.forEach(i => {
+                if (i !== item) i.classList.remove('active');
+            });
+            
+
+            // 切換當前項目的狀態
+            item.classList.toggle('active');
+        }
+    </script>
 {% endblock %}

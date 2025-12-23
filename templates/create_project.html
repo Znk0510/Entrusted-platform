@@ -1,30 +1,67 @@
 {% extends "layout.html" %}
 
-{% block title %}建立新專案{% endblock %}
+{% block title %}發布新需求{% endblock %}
 
 {% block content %}
-    <div class="form-wrapper">
-        <h2>建立一個新專案</h2>
-        <p>請填寫你的專案需求，開放給接案人報價。</p>
-        <br>
-
-        <form method="POST" action="{{ url_for('handle_create_project') }}">
-            
-            <div class="form-group">
-                <label for="title">專案標題：</label>
-                <input type="text" id="title" name="title" required placeholder="例如：幫我的咖啡廳設計 Logo">
-            </div>
-            
-            <div class="form-group">
-                <label for="description">詳細需求描述：</label>
-                <textarea id="description" name="description" rows="8" required placeholder="請詳細說明你的需求、預算範圍、期望的交付日期等..."></textarea>
-            </div>
-            
-            <div class="form-group">
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin-bottom: 10px;">發布專案</button>
-                <a href="{{ url_for('get_client_dashboard') }}" class="btn btn-secondary" style="width: 100%; text-align: center;">取消</a>
-            </div>
-        </form>
+    <div class="form-wrapper-wide">
         
+        <div class="form-header-row">
+            <div>
+                <h2>建立一個新專案</h2>
+                <p style="color: #666;">清楚描述您的需求，能幫助您更快找到合適的專家。</p>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ url_for('handle_create_project') }}" class="wide-form">
+            
+            <div class="form-row">
+                <div class="form-group col-grow">
+                    <label for="title">專案標題 <span style="color:red">*</span></label>
+                    <input type="text" id="title" name="title" required placeholder="例如：日系風格咖啡廳 Logo 設計" style="font-size: 1.1em;">
+                </div>
+                <div class="form-group col-fixed">
+                    <label for="budget">預算範圍 <span style="color:red">*</span></label>
+                    <select id="budget" name="budget" required style="width: 100%; padding: 12px 15px; font-size: 16px; border: 1px solid var(--border-color); border-radius: 5px;">
+                        <option value="" disabled selected>請選擇...</option>
+                        <option value="5,000 以下">5,000 以下</option>
+                        <option value="5,001 - 10,000">5,001 - 1萬</option>
+                        <option value="10,001 - 50,000">1萬 - 5萬</option>
+                        <option value="50,001 - 100,000">5萬 - 10萬</option>
+                        <option value="100,001 - 300,000">10萬 - 30萬</option>
+                        <option value="300,001 - 1,000,000">30萬 - 1,00萬</option>
+                        <option value="1,000,001 - 3,000,000">100萬 - 300萬</option>
+                        <option value="3,000,000 以上">300萬 以上</option>
+                    </select>
+                </div>
+                <div class="form-group col-fixed">
+                    <label for="deadline">提案截止日期 <span style="color:red">*</span></label>
+                    <input type="datetime-local" id="deadline" name="deadline" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="description">詳細需求描述 <span style="color:red">*</span></label>
+                <textarea id="description" name="description" rows="12" required 
+                          placeholder="建議包含以下資訊：&#10;1. 專案背景與目標&#10;2. 具體功能或設計風格參考&#10;3. 預算範圍&#10;4. 預期交付的檔案格式"></textarea>
+                <p style="font-size: 0.85em; color: #888; text-align: right; margin-top: 5px;">
+                    💡 提示：越詳細的描述，越能吸引高品質的提案。
+                </p>
+            </div>
+            
+            <div class="form-footer">
+                <a href="{{ url_for('get_client_dashboard') }}" 
+                   class="btn btn-secondary btn-lg" 
+                   style="min-width: 150px; text-align: center;">
+                   取消並返回
+                </a>
+
+                <button type="submit" 
+                        class="btn btn-primary btn-lg" 
+                        style="min-width: 150px;">
+                        確認發布專案
+                </button>
+            </div>
+
+        </form>
     </div>
 {% endblock %}

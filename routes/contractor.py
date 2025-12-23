@@ -2,141 +2,241 @@ from fastapi import APIRouter, Depends, Request, Form, HTTPException, status, Up
 from fastapi import Query
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from psycopg_pool import AsyncConnectionPool
-from db import getDB # 資料庫連線函式
-from routes.auth import get_current_contractor_user, get_current_user 
+from db import getDB 
+# 匯入我們在 auth.py 寫好的權限檢查函式
+# 確保只有「接案人」身分才能呼叫這裡的 API
+from routes.auth import get_current_contractor_user
 import os
 import aiofiles
+from utils import save_upload_file, FOLDER_PROPOSALS, FOLDER_DELIVERABLES
+from datetime import datetime
+from main import templates
+import urllib.parse
+import re
 
-# 從 main 匯入共用的 templates 物件 
-#from main import templates
-
-from fastapi.templating import Jinja2Templates
-# 重新定義 templates 物件
-templates = Jinja2Templates(directory="templates")
-
-# 設定
+# 設定 Router
 router = APIRouter()
 
-# 建立一個儲存上傳檔案的資料夾 (如果它不存在的話)
+# 建立儲存資料夾 (雖然 utils.py 有做，但這裡再確保一次)
 UPLOAD_DIRECTORY = "uploads"
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
+# ---------------------------------------------------------
+# 工具函式區：處理預算字串的轉換
+# 因為資料庫存的是 "5,000 以下" 這種文字，但篩選時需要轉成數字
+# ---------------------------------------------------------
 
-# 接案人儀表板
+def get_budget_limit(budget_str: str):
+    """
+    將預算下拉選單的文字 (e.g., "5,000 以下") 轉換為 (最小值, 最大值) 的數字 Tuple。
+    用途：接案人報價時，檢查報價是否超出預算範圍。
+    """
+    if not budget_str:
+        return 0, float('inf') # 沒設定就無限大
+        
+    clean_str = budget_str.strip()
+
+    # 定義預算對照表 (Key 必須跟 create_project.html 的 value 一模一樣)
+    mapping = {
+        "5,000 以下": (0, 5000),
+        "5,001 - 10,000": (5001, 10000),
+        "10,001 - 50,000": (10001, 50000),
+        "50,001 - 100,000": (50001, 100000),
+        "100,001 - 300,000": (100001, 300000),
+        "300,001 - 1,000,000": (300001, 1000000),
+        "1,000,001 - 3,000,000": (1000001, 3000000),
+        "3,000,000 以上": (3000001, float('inf'))
+    }
+    
+    return mapping.get(clean_str, (0, float('inf')))
+
+def parse_budget_max_value(budget_str: str) -> int:
+    """
+    將預算文字轉為單一數字，用於「預算由高到低」的排序功能。
+    邏輯：取區間的最大值來代表這個專案的預算規模。
+    """
+    if not budget_str: 
+        return 0
+    
+    # 移除逗號與空白，方便處理
+    clean_str = budget_str.replace(',', '').replace(' ', '')
+    
+    # 手動對照表 (處理常見格式)
+    mapping = {
+        "5000以下": 5000,
+        "5001-10000": 10000,
+        "10001-50000": 50000,
+        "50001-100000": 100000,
+        "100001-300000": 300000,
+        "300001-1000000": 1000000,
+        "1000001-3000000": 3000000,
+        "3000000以上": 99999999
+    }
+    
+    if clean_str in mapping:
+        return mapping[clean_str]
+        
+    # 如果對照不到，嘗試用正規表達式抓出字串裡所有的數字，取最大的一個
+    # 例如 "1萬 - 5萬" -> 抓出 [1, 5] -> 回傳 5
+    numbers = re.findall(r'\d+', clean_str)
+    if numbers:
+        return int(max(map(int, numbers)))
+        
+    return 0
+
+# ---------------------------------------------------------
+# 1. 接案人儀表板 (Dashboard) & 搜尋引擎
+# ---------------------------------------------------------
 @router.get("/dashboard", response_class=HTMLResponse)
 async def get_contractor_dashboard(
     request: Request, 
-    user: dict = Depends(get_current_contractor_user), # 保護路由
+    user: dict = Depends(get_current_contractor_user), # 權限檢查
     conn: AsyncConnectionPool = Depends(getDB),
-    # --- 2. (新) 接收 URL 傳來的 search_query 參數 ---
-    search_query: str | None = Query(None, alias="search") 
+    status_filter: str = Query("open", alias="status"), # 從網址 ?status=... 取得，預設 'open'
+    search_query: str | None = Query(None, alias="search"), # 舊版搜尋參數 (保留相容性)
+    # --- 新版進階篩選參數 ---
+    q: str | None = Query(None),                 # 關鍵字搜尋
+    min_budget: str | None = Query(None),        # 最低預算 (使用者輸入的數字)
+    max_budget: str | None = Query(None),        # 最高預算
+    deadline_days: str | None = Query(None),     # 截止天數 (例如 "3", "7", "custom")
+    custom_deadline: str | None = Query(None),   # 自訂截止日期 (YYYY-MM-DD)
+    sort: str | None = Query('newest')           # 排序方式
 ):
-    """
-    顯示接案人的主儀表板。
-    - 區塊 1: 顯示 所有 'open' (開放中)的專案 (查詢/觀看委託專案)
-    - 區塊 2: 顯示 贏得的專案
-    - 區塊 3: 顯示 投標的(審核中)專案
-    - 區塊 4: 顯示 未得標的專案
-    """
-    open_projects = []
-    won_projects = []
-    bid_projects = []
-    lost_projects = [] 
+    # 資料清理：把預算轉成整數，如果使用者亂填文字就變 None
+    min_b_val = int(min_budget) if min_budget and min_budget.strip().isdigit() else None
+    max_b_val = int(max_budget) if max_budget and max_budget.strip().isdigit() else None
+
+    projects = []
     
+    # 統計數據 (顯示在儀表板頂端的數字卡片)
+    stats = {
+        "open": 0, "in_progress": 0, "pending": 0, "completed": 0
+    }
+
     async with conn.cursor() as cur:
         
-        # 區塊 1: 查詢 'open' 的專案/搜尋
-        
-        # 基礎查詢
-        sql_open_projects = """
-            SELECT p.id, p.title, p.description, p.status, u.username AS client_name
-            FROM projects p
-            JOIN users u ON p.client_id = u.id
-            WHERE p.status = 'open' AND p.client_id != %s
-            AND NOT EXISTS (
-                SELECT 1 FROM proposals pr 
-                WHERE pr.project_id = p.id AND pr.contractor_id = %s
+        # 1. 計算各狀態的案件數量
+        await cur.execute("""
+            SELECT COUNT(*) as count FROM projects 
+            WHERE status = 'open' AND (deadline IS NULL OR deadline > NOW())
+        """)
+        stats["open"] = (await cur.fetchone())["count"]
+
+        # 計算接案人「自己」相關的案件數量 (執行中、待驗收、已結案)
+        for s, key in [
+            ("('in_progress', 'rejected')", "in_progress"), 
+            ("('pending_approval')", "pending"), 
+            ("('completed')", "completed")
+        ]:
+            # 注意：這裡的 WHERE 條件多了 contractor_id = user["id"]
+            # 因為「執行中」只需要看「我接的案子」，而不是全平台的案子
+            await cur.execute(
+                f"SELECT COUNT(*) as count FROM projects WHERE contractor_id = %s AND status IN {s}",
+                (user["id"],)
             )
-        """
-        
-        # 準備參數
-        params = [user["id"], user["id"]]
-        
-        # 如果有搜尋字詞，就加入 SQL 條件
-        if search_query:
-            sql_open_projects += " AND (p.title ILIKE %s OR p.description ILIKE %s)"
-            # ILIKE 是 PostgreSQL 中 "不分大小寫" 的 LIKE
-            params.append(f"%{search_query}%")
-            params.append(f"%{search_query}%")
+            stats[key] = (await cur.fetchone())["count"]
 
-        sql_open_projects += " ORDER BY p.created_at DESC"
+        # 2. 根據目前選的 Tab (status_filter) 撈取專案列表
         
-        await cur.execute(sql_open_projects, tuple(params))
-        open_projects = await cur.fetchall()
-
-        # 區塊 2: 查詢 "贏得的案子"
-        await cur.execute(
+        if status_filter == 'open':
+            # --- 模式 A: 「尋找新案件」 (全平台的 Open 專案) ---
+            
+            base_sql = """
+                SELECT p.*, u.username AS client_name,
+                -- 檢查我是否已經投過標 (回傳 True/False)
+                EXISTS (
+                    SELECT 1 FROM proposals pr 
+                    WHERE pr.project_id = p.id AND pr.contractor_id = %s
+                ) as has_proposed
+                FROM projects p
+                JOIN users u ON p.client_id = u.id
+                WHERE p.status = 'open'
+                AND (p.deadline IS NULL OR p.deadline > NOW()) 
             """
-            SELECT p.id, p.title, p.status, u.username AS client_name
-            FROM projects p
-            JOIN users u ON p.client_id = u.id
-            WHERE p.contractor_id = %s
-            ORDER BY 
-                CASE status
-                    WHEN 'in_progress' THEN 1
-                    WHEN 'rejected' THEN 2
-                    WHEN 'pending_approval' THEN 3
-                    WHEN 'completed' THEN 4
-                END,
-                p.created_at DESC
-            """,
-            (user["id"],)
-        )
-        won_projects = await cur.fetchall()
-        
-        # 區塊 3: 查詢 "投標的案子"
-        await cur.execute(
-            """
-            SELECT p.id, p.title, u.username AS client_name
-            FROM projects p
-            JOIN users u ON p.client_id = u.id
-            JOIN proposals pr ON p.id = pr.project_id
-            WHERE pr.contractor_id = %s AND p.status = 'open'
-            ORDER BY p.created_at DESC
-            """,
-            (user["id"],)
-        )
-        bid_projects = await cur.fetchall()
+            params = [user["id"]]
 
-        # 區塊 4: 查詢 "未得標的案子"
-        await cur.execute(
-            """
-            SELECT p.id, p.title, p.status, u.username AS client_name
-            FROM projects p
-            JOIN users u ON p.client_id = u.id
-            JOIN proposals pr ON p.id = pr.project_id
-            WHERE 
-                pr.contractor_id = %s
-                AND p.status != 'open'
-                AND (p.contractor_id IS NULL OR p.contractor_id != %s)
-            ORDER BY p.created_at DESC
-            """,
-            (user["id"], user["id"])
-        )
-        lost_projects = await cur.fetchall()
+            # A-1. 關鍵字搜尋 (標題 或 描述)
+            if q:
+                base_sql += " AND (p.title ILIKE %s OR p.description ILIKE %s)"
+                # ILIKE 是 PostgreSQL 專用的「不分大小寫」搜尋
+                params.extend([f"%{q}%", f"%{q}%"])
 
+            # A-2. 截止日期篩選
+            if deadline_days:
+                if deadline_days.isdigit(): # 3, 7, 14 天內
+                    days = int(deadline_days)
+                    base_sql += f" AND p.deadline <= NOW() + INTERVAL '{days} days'"
+                elif deadline_days == 'custom' and custom_deadline: # 自訂日期
+                    base_sql += " AND p.deadline <= %s"
+                    params.append(custom_deadline)
+
+            # A-3. 排序 SQL 部分 (僅處理非預算排序)
+            if sort == 'deadline':
+                base_sql += " ORDER BY p.deadline ASC NULLS LAST" # 快截止的排前面
+            elif sort == 'newest':
+                base_sql += " ORDER BY p.created_at DESC" # 最新的排前面
+            
+            await cur.execute(base_sql, tuple(params))
+            raw_projects = await cur.fetchall()
+
+            # A-4. Python 端處理：預算過濾與排序
+            # (因為 DB 裡的預算是文字，無法直接用 SQL > < 比較，所以撈出來用 Python 算)
+            projects = []
+            for p in raw_projects:
+                # 解析該專案的預算數值
+                budget_val = parse_budget_max_value(p.get('budget', ''))
+                
+                # 篩選邏輯
+                if min_b_val is not None and budget_val < min_b_val:
+                    continue # 太便宜，跳過
+                if max_b_val is not None and budget_val > max_b_val:
+                    continue # 太貴(超出範圍)，跳過
+                
+                # 將數值暫存進物件，方便等下排序
+                p['budget_val'] = budget_val
+                projects.append(p)
+
+            # 如果選了「預算由高到低」，在這裡進行 List 排序
+            if sort == 'budget_high':
+                projects.sort(key=lambda x: x.get('budget_val', 0), reverse=True)
+
+        else:
+            # --- 模式 B: 「我的專案」 (執行中、已結案...) ---
+            # 這裡只需要撈出 contractor_id 是我本人的專案
+            
+            status_condition = ""
+            if status_filter == 'in_progress':
+                status_condition = "AND p.status IN ('in_progress', 'rejected')"
+            elif status_filter == 'pending_approval':
+                status_condition = "AND p.status = 'pending_approval'"
+            elif status_filter == 'completed':
+                status_condition = "AND p.status = 'completed'"
+            else:
+                status_condition = "AND 1=0" # 防呆：無效狀態不回傳任何資料
+
+            sql = f"""
+                SELECT p.*, u.username AS client_name
+                FROM projects p
+                JOIN users u ON p.client_id = u.id
+                WHERE p.contractor_id = %s {status_condition}
+                ORDER BY p.created_at DESC
+            """
+            await cur.execute(sql, (user["id"],))
+            projects = await cur.fetchall()
 
     return templates.TemplateResponse("dashboard_contractor.html", {
         "request": request,
         "user": user,
-        "open_projects": open_projects,
-        "won_projects": won_projects,
-        "bid_projects": bid_projects,
-        "lost_projects": lost_projects,
-        "search_query": search_query
+        "projects": projects,
+        "current_filter": status_filter,
+        "search_query": q,
+        "stats": stats
     })
 
-# 專案詳情（接案人）
+
+# ---------------------------------------------------------
+# 2. 專案詳情 (Project Detail)
+# ---------------------------------------------------------
 @router.get("/project/{project_id}", response_class=HTMLResponse)
 async def get_contractor_project_details(
     request: Request,
@@ -144,43 +244,42 @@ async def get_contractor_project_details(
     user: dict = Depends(get_current_contractor_user),
     conn: AsyncConnectionPool = Depends(getDB)
 ):
-    has_proposed = False
-    issues = []
-
-    # ⭐ 評價相關
-    client_rating_summary = None
-    client_comments = []
-    can_rate = False
-    already_rated = False
-    client = None
-
+    project = None
+    has_proposed = False 
+    my_review = None 
+    
     async with conn.cursor() as cur:
-
-        # 1️⃣ 先取得專案（一定要最先）
+        # A. 撈專案資料
         await cur.execute(
-            """
-            SELECT p.*, u.username AS client_name
-            FROM projects p
-            JOIN users u ON p.client_id = u.id
-            WHERE p.id = %s
-            """,
+            "SELECT p.*, u.username AS client_name FROM projects p "
+            "JOIN users u ON p.client_id = u.id "
+            "WHERE p.id = %s", 
             (project_id,)
         )
         project = await cur.fetchone()
-
+        
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        # 2️⃣ 是否已投標
-        if project["status"] == "open":
+        # B. 檢查是否投過標 (用於顯示「已投標」狀態)
+        if project["status"] == 'open':
             await cur.execute(
-                "SELECT 1 FROM proposals WHERE project_id = %s AND contractor_id = %s",
+                "SELECT id FROM proposals WHERE project_id = %s AND contractor_id = %s",
                 (project_id, user["id"])
             )
             has_proposed = await cur.fetchone() is not None
 
-        # 3️⃣ Issue Tracker（非 open）
-        if project["status"] != "open":
+        # C. 檢查是否已評價 (用於結案後)
+        if project["status"] == 'completed':
+            await cur.execute(
+                "SELECT * FROM reviews WHERE project_id = %s AND reviewer_id = %s",
+                (project_id, user["id"])
+            )
+            my_review = await cur.fetchone()
+
+        # D. 撈 Issue (溝通紀錄)
+        issues = []
+        if project["status"] != 'open':
             await cur.execute(
                 """
                 SELECT i.*, u.username AS creator_name
@@ -192,7 +291,8 @@ async def get_contractor_project_details(
                 (project_id,)
             )
             issues_data = await cur.fetchall()
-
+            
+            # 補上每個 Issue 的留言
             for issue in issues_data:
                 await cur.execute(
                     """
@@ -205,352 +305,125 @@ async def get_contractor_project_details(
                     (issue["id"],)
                 )
                 issue["comments"] = await cur.fetchall()
-                issues.append(issue)
+                issues.append(issue)    
 
-        # ==================================================
-        # ⭐ 委託人「被評價摘要」（給接案人看）
-        # ==================================================
-        await cur.execute(
-            """
-            SELECT
-                AVG(requirement_rationality_score) AS requirement_rationality_avg,
-                AVG(acceptance_difficulty_score)   AS acceptance_difficulty_avg,
-                AVG(client_attitude_score)         AS client_attitude_avg,
-                COUNT(*)                           AS rating_count
-            FROM ratings
-            WHERE ratee_id = %s
-              AND rating_direction = 'contractor_to_client'
-            """,
-            (project["client_id"],)
-        )
-        client_rating_summary = await cur.fetchone()
+    return templates.TemplateResponse("project_detail_contractor.html", {
+        "request": request,
+        "user": user,
+        "project": project,
+        "has_proposed": has_proposed,
+        "issues": issues,
+        "my_review": my_review,
+        "message": request.query_params.get("message", None),
+        "error": request.query_params.get("error", None)
+    })
 
-        await cur.execute(
-            """
-            SELECT overall_comment, rating_date
-            FROM ratings
-            WHERE ratee_id = %s
-              AND rating_direction = 'contractor_to_client'
-              AND overall_comment IS NOT NULL
-            ORDER BY rating_date DESC
-            LIMIT 5
-            """,
-            (project["client_id"],)
-        )
-        client_comments = await cur.fetchall()
 
-        # ==================================================
-        # ⭐ 接案人 → 委託人 是否可評價
-        # ==================================================
-        if (
-            project["status"] == "completed"
-            and project["contractor_id"] == user["id"]
-        ):
-            # 委託人資料
-            await cur.execute(
-                "SELECT id, username FROM users WHERE id = %s",
-                (project["client_id"],)
-            )
-            client = await cur.fetchone()
-
-            # 是否已評價
-            await cur.execute(
-                """
-                SELECT 1 FROM ratings
-                WHERE project_id = %s
-                  AND rater_id = %s
-                  AND rating_direction = %s
-                """,
-                (project_id, user["id"], "contractor_to_client")
-            )
-            already_rated = await cur.fetchone() is not None
-            can_rate = (project["status"] == "completed") and not already_rated
-
-    return templates.TemplateResponse(
-        "project_detail_contractor.html",
-        {
-            "request": request,
-            "user": user,
-            "project": project,
-            "has_proposed": has_proposed,
-            "issues": issues,
-            "message": request.query_params.get("message"),
-            "error": request.query_params.get("error"),
-
-            # ⭐ 評價顯示
-            "client_rating": client_rating_summary,
-            "client_comments": client_comments,
-
-            # ⭐ 評價行為
-            "can_rate": can_rate,
-            "already_rated": already_rated,
-            "client": client,
-            
-            
-        }
-        
-    )
-    
-
-# 專案詳情
-#@router.get("/project/{project_id}", response_class=HTMLResponse)
-#async def get_contractor_project_details(
-  #  request: Request,
-  #  project_id: int,
-   # user: dict = Depends(get_current_contractor_user), # 保護
-   # conn: AsyncConnectionPool = Depends(getDB)
-#):
-   # project = None
-   # has_proposed = False 
-    
-   # async with conn.cursor() as cur:
-   #     await cur.execute(
-   #         "SELECT p.*, u.username AS client_name FROM projects p "
-   #         "JOIN users u ON p.client_id = u.id "
-   #         "WHERE p.id = %s", 
-    #        (project_id,)
-    #    )
-    #    project = await cur.fetchone()
-    
-    #    if not project:
-   #         raise HTTPException(status_code=404, detail="Project not found")
-
-   #     if project["status"] == 'open':
- #           await cur.execute(
- #               "SELECT id FROM proposals WHERE project_id = %s AND contractor_id = %s",
-  #              (project_id, user["id"])
-  #          )
-  #          has_proposed = await cur.fetchone() is not None
-
-        # 取得 Issue Tracker 資料
-   #     issues = []
-        # 只有當專案狀態不是 open (已經開始合作後) 才顯示 issue
-     #   if project["status"] != 'open':
-     #       await cur.execute(
-     #           """
-      #          SELECT i.*, u.username AS creator_name
-     #           FROM project_issues i
-    #            JOIN users u ON i.creator_id = u.id
-    #            WHERE i.project_id = %s
-   #             ORDER BY i.created_at DESC
-       #         """,
-   #             (project_id,)
-   #         )
-   #         issues_data = await cur.fetchall()
-            
-     #       for issue in issues_data:
-        #        await cur.execute(
-      #              """
-      #              SELECT c.*, u.username, u.role
-      #              FROM issue_comments c
-      #              JOIN users u ON c.user_id = u.id
-      #              WHERE c.issue_id = %s
-      #              ORDER BY c.created_at ASC
-      #              """,
-       #             (issue["id"],)
-       #         )
-       #         issue["comments"] = await cur.fetchall()
-        #        issues.append(issue)    
-       #         
-    # =========================
-    # ⭐ 評價相關（接案人 → 委託人）
-    # =========================
-   #     can_rate = False
-    #    already_rated = False
-    #    client = None
-#
-    #    if project["status"] == "completed" and project["contractor_id"] == user["id"]:
-            # 取得委託人資料
-      #      await cur.execute(
-        #       "SELECT id, username FROM users WHERE id = %s",
-        #        (project["client_id"],)
-        #    )
-        #    client = await cur.fetchone()
-
-            # 檢查是否已經評價過
-       #     await cur.execute(
-        #        """
-        #        SELECT 1 FROM ratings
-       #         WHERE project_id = %s
-       #           AND rater_id = %s
-       #           AND rating_direction = 'contractor_to_client'
-        #        """,
-      #          (project_id, user["id"])
-        #    )
-      #      already_rated = await cur.fetchone() is not None
-
-       #     can_rate = not already_rated
-            
-
-   # return templates.TemplateResponse("project_detail_contractor.html", {
-     #   "request": request,
-     #   "user": user,
-    #    "project": project,
-    #    "has_proposed": has_proposed,
-    #    "issues": issues,
-     #   "message": request.query_params.get("message", None),
-     #   "error": request.query_params.get("error", None),
-        
-         # ⭐ 評價相關（新增）
-     #   "can_rate": can_rate,
-    #    "already_rated": already_rated,
-    #    "client": client,
-    
-    
-  #  return templates.TemplateResponse("project_detail_contractor.html", {
-  #      "request": request,
-  #      "user": user,
-  #      "project": project,
-  #      "has_proposed": has_proposed,
-   #     "issues": issues,
-  #      "message": request.query_params.get("message", None),
-   #     "error": request.query_params.get("error", None),
-
-        # ⭐ 評價
-   #     "can_rate": can_rate,
-   #     "already_rated": already_rated,
-  #      "client": client,
- #   })
-
-    
-#})
-
-# 投標
+# ---------------------------------------------------------
+# 3. 投標功能 (Propose)
+# ---------------------------------------------------------
 @router.post("/project/{project_id}/propose")
 async def handle_propose(
     request: Request,
     project_id: int,
     quote: float = Form(...),
-    message: str = Form(...),
-    user: dict = Depends(get_current_contractor_user), # 保護
+    message: str = Form(""),
+    proposal_pdf: UploadFile = File(...),
+    user: dict = Depends(get_current_contractor_user),
     conn: AsyncConnectionPool = Depends(getDB)
 ):
-    redirect_url = f"/contractor/project/{project_id}"
-    try:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO proposals (quote, message, contractor_id, project_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (quote, message, user["id"], project_id)
-            )
-        return RedirectResponse(
-            url=f"{redirect_url}?message=Proposal+submitted+successfully.", 
-            status_code=status.HTTP_303_SEE_OTHER
-        )
-    except Exception as e:
-        return RedirectResponse(
-            url=f"{redirect_url}?error=Failed+to+submit+proposal.+Have+you+already+proposed?", 
-            status_code=status.HTTP_303_SEE_OTHER
-        )
-
-# 上傳檔案
-@router.post("/project/{project_id}/upload_file")
-async def handle_upload_file(
-    request: Request,
-    project_id: int,
-    file: UploadFile = File(...), # 接收檔案
-    user: dict = Depends(get_current_contractor_user), # 保護
-    conn: AsyncConnectionPool = Depends(getDB)
-):
-    redirect_url = f"/contractor/project/{project_id}"
+    # 格式檢查：只允許 PDF
+    if not proposal_pdf.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="提案計畫書必須是 PDF 格式")
 
     async with conn.cursor() as cur:
-        # 驗證是否為此專案的得標者
-        await cur.execute(
-            "SELECT id FROM projects WHERE id = %s AND contractor_id = %s",
-            (project_id, user["id"])
-        )
+        await cur.execute("SELECT deadline, status, budget FROM projects WHERE id = %s", (project_id,))
         project = await cur.fetchone()
-        if not project:
-            return RedirectResponse(
-                url=f"{redirect_url}?error=You+are+not+the+assigned+contractor+for+this+project.", 
-                status_code=status.HTTP_303_SEE_OTHER
-            )
         
-    # 儲存檔案到伺服器
-    filepath = os.path.join(UPLOAD_DIRECTORY, f"{project_id}_{user['id']}_{file.filename}")
-    
-    try:
-        async with aiofiles.open(filepath, "wb") as buffer:
-            while chunk := await file.read(1024 * 1024): 
-                await buffer.write(chunk)
-    except Exception as e:
-        return RedirectResponse(
-            url=f"{redirect_url}?error=File+upload+failed: {e}", 
-            status_code=status.HTTP_303_SEE_OTHER
-        )
+        if not project:
+            raise HTTPException(status_code=404, detail="專案不存在")
+        
+        # 1. 檢查是否過期
+        if project['deadline']:
+             if datetime.now().astimezone() > project['deadline'].astimezone():
+                 return RedirectResponse(
+                     url=f"/contractor/project/{project_id}?error=Time+Limit+Exceeded", 
+                     status_code=303
+                 )
 
-    # 更新資料庫
-    try:
-        async with conn.cursor() as cur:
-            # 記錄檔案
-            await cur.execute(
-                """
-                INSERT INTO project_files (filename, filepath, project_id, uploader_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (file.filename, filepath, project_id, user["id"])
+        # 2. 檢查報價是否符合預算範圍
+        # 使用工具函式解析預算文字
+        min_budget, max_budget = get_budget_limit(project.get('budget'))
+        
+        if quote < min_budget or quote > max_budget:
+            # 報價不合理，拒絕提交
+            error_msg = f"報價金額 (${int(quote)}) 超出預算範圍 ({project['budget']})，無法提交。"
+            encoded_error = urllib.parse.quote(error_msg)
+            return RedirectResponse(
+                url=f"/contractor/project/{project_id}?error={encoded_error}", 
+                status_code=303
             )
-            
-            # 更新專案狀態
-            await cur.execute(
-                """
-                UPDATE projects
-                SET status = 'pending_approval'
-                WHERE id = %s AND (status = 'in_progress' OR status = 'rejected')
-                """,
-                (project_id,)
-            )
-    except Exception as e:
-        os.remove(filepath)
-        return RedirectResponse(
-            url=f"{redirect_url}?error=Database+error+after+upload: {e}", 
-            status_code=status.HTTP_303_SEE_OTHER
-        )
 
-    return RedirectResponse(
-        url=f"{redirect_url}?message=File+uploaded+successfully.+Project+is+pending+approval.", 
-        status_code=status.HTTP_303_SEE_OTHER
-    )
-
-# 下載檔案(擺著...前端沒設計)
-@router.get("/download_file/{file_id}")
-async def download_file(
-    request: Request,
-    file_id: int,
-    user: dict = Depends(get_current_user),
-    conn: AsyncConnectionPool = Depends(getDB)
-):
-    if not user:
-         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-         
-    async with conn.cursor() as cur:
+        # 3. 儲存檔案
+        file_path = await save_upload_file(proposal_pdf, project_id, FOLDER_PROPOSALS)
+        
+        # 4. 寫入資料庫
         await cur.execute(
             """
-            SELECT pf.filepath, pf.filename
-            FROM project_files pf
-            JOIN projects p ON pf.project_id = p.id
-            WHERE 
-                pf.id = %s
-                AND (p.client_id = %s OR p.contractor_id = %s)
+            INSERT INTO proposals (project_id, contractor_id, quote, message, proposal_file)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (file_id, user["id"], user["id"])
+            (project_id, user["id"], quote, message, file_path)
         )
-        file_record = await cur.fetchone()
         
-    if not file_record:
-        raise HTTPException(status_code=404, detail="File not found or access denied.")
-    
-    filepath = file_record["filepath"]
-    filename = file_record["filename"]
-    
-    if not os.path.exists(filepath):
-         raise HTTPException(status_code=44, detail="File not found on server.")
+    return RedirectResponse(url=f"/contractor/project/{project_id}?message=Proposed", status_code=303)
 
-    return FileResponse(path=filepath, filename=filename)
 
+# ---------------------------------------------------------
+# 4. 上傳交付檔案 (Upload Deliverables)
+# ---------------------------------------------------------
+@router.post("/project/{project_id}/upload")
+async def upload_project_file(
+    request: Request,
+    project_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_contractor_user),
+    conn: AsyncConnectionPool = Depends(getDB)
+):
+    async with conn.cursor() as cur:
+        await cur.execute("SELECT status, contractor_id FROM projects WHERE id = %s", (project_id,))
+        project = await cur.fetchone()
+        
+        # 權限檢查：必須是該專案的得標者
+        if not project or project["contractor_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="無權限")
+            
+        # 狀態檢查：只有「進行中」或「被退件」時才能上傳
+        allowed_statuses = ('in_progress', 'rejected', 'pending_approval')
+        if project["status"] not in allowed_statuses:
+             raise HTTPException(status_code=400, detail="目前狀態無法上傳檔案")
+
+        # 儲存檔案
+        file_path = await save_upload_file(file, project_id, FOLDER_DELIVERABLES)
+        
+        # 記錄到 project_files 表
+        await cur.execute(
+            "INSERT INTO project_files (project_id, uploader_id, filename, filepath) VALUES (%s, %s, %s, %s)",
+            (project_id, user["id"], file.filename, file_path)
+        )
+        
+        # 狀態自動更新為「等待驗收」(pending_approval)
+        await cur.execute(
+            "UPDATE projects SET status = 'pending_approval' WHERE id = %s",
+            (project_id,)
+        )
+        
+    return RedirectResponse(url=f"/contractor/project/{project_id}?message=File+Updated", status_code=303)
+
+
+# ---------------------------------------------------------
+# 5. Issue 留言功能
+# ---------------------------------------------------------
 @router.post("/issue/{issue_id}/comment")
 async def contractor_comment_issue(
     request: Request,
@@ -560,7 +433,7 @@ async def contractor_comment_issue(
     conn: AsyncConnectionPool = Depends(getDB)
 ):
     async with conn.cursor() as cur:
-        # 驗證接案人是否負責此專案
+        # 權限檢查：確認該 Issue 屬於我接的案子
         await cur.execute(
             """
             SELECT p.id FROM project_issues i
@@ -579,3 +452,21 @@ async def contractor_comment_issue(
         )
         
     return RedirectResponse(url=f"/contractor/project/{project['id']}?message=Comment+added", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# ---------------------------------------------------------
+# 6. 下載檔案 (安全檢查)
+# ---------------------------------------------------------
+@router.get("/download")
+async def download_file(
+    path: str, 
+    user: dict = Depends(get_current_contractor_user)
+):
+    # 防止 Path Traversal 攻擊 (禁止 .. 移動到上一層)
+    if ".." in path or not path.startswith("uploads/"):
+        raise HTTPException(status_code=403, detail="Invalid file path")
+    
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    return FileResponse(path)

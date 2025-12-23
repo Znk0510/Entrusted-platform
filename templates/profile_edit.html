@@ -1,0 +1,87 @@
+{% extends "layout.html" %}
+
+{% block title %}編輯個人資料{% endblock %}
+
+{% block content %}
+<div class="auth-container-wide">
+    <form method="POST" action="{{ url_for('handle_edit_profile') }}" enctype="multipart/form-data" class="profile-edit-card">
+        
+        <div class="profile-edit-sidebar">
+            <h3 class="sidebar-title">個人頭像</h3>
+            
+            <div class="avatar-upload-container">
+                <div class="avatar-preview-wrapper">
+                    {% if user.avatar %}
+                        <img id="avatar-preview-img" src="/{{ user.avatar }}" alt="Avatar Preview">
+                    {% else %}
+                        <div id="avatar-preview-placeholder" class="avatar-placeholder-large">
+                            {{ user.username[0] | upper }}
+                        </div>
+                        <img id="avatar-preview-img" src="" style="display: none;">
+                    {% endif %}
+                    
+                    <label for="avatar" class="avatar-upload-overlay">
+                        <span class="camera-icon">📷</span>
+                        <span class="upload-text">更換圖片</span>
+                    </label>
+                </div>
+            </div>
+
+            <input type="file" id="avatar" name="avatar" accept="image/*" onchange="previewImage(this)">
+            
+            <p class="helper-text">建議尺寸: 500x500px</p>
+        </div>
+
+        <div class="profile-edit-main">
+            <div class="form-header-group">
+                <h2>編輯個人資料</h2>
+                <p>完善您的個人檔案，讓合作夥伴更了解您。</p>
+            </div>
+
+            <div class="form-group">
+                <label for="introduction">自我介紹</label>
+                <textarea id="introduction" name="introduction" rows="8" 
+                          placeholder="向大家介紹一下你自己&#10;例如：您的專業技能、過往經驗或接案風格 ..."
+                          class="styled-textarea">{{ user.introduction if user.introduction else '' }}</textarea>
+                <p style="text-align: right; font-size: 0.85em; color: #aaa; margin-top: 5px;">
+                    展現您的專業與熱情
+                </p>
+            </div>
+
+            <div class="action-buttons">
+                <a href="{{ url_for('view_user_profile', user_id=user.id) }}" 
+                    class="btn btn-secondary btn-lg" 
+                    style="min-width: 150px; text-align: center;">
+                    取消並返回
+                </a>
+
+                <button type="submit" class="btn btn-primary btn-lg" style="min-width: 150px;">
+                    儲存變更
+                </button>
+            </div>
+        </div>
+
+    </form>
+</div>
+
+<script>
+    function previewImage(input) {
+        if (input.files && input.files[0]) {
+            var reader = new FileReader();
+            
+            reader.onload = function(e) {
+                // 隱藏文字 placeholder
+                var placeholder = document.getElementById('avatar-preview-placeholder');
+                if (placeholder) placeholder.style.display = 'none';
+                
+                // 顯示 img 標籤並設定 src
+                var img = document.getElementById('avatar-preview-img');
+                img.src = e.target.result;
+                img.style.display = 'block';
+            }
+            
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+</script>
+{% endblock %}

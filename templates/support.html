@@ -1,0 +1,155 @@
+{% extends "layout.html" %}
+
+{% block title %}客服中心{% endblock %}
+
+{% block content %}
+
+    <div class="hero-showcase" style="padding: 30px; margin-bottom: 20px;">
+        <div class="hero-content">
+            <h1>🛠️ 客服與支援中心</h1>
+            <p>遇到問題了嗎？別擔心，我們在這裡協助您解決所有關於平台操作、付款與爭議的疑問。</p>
+        </div>
+        <div class="hero-image" style="font-size: 5em; text-align: right; opacity: 0.8;">
+            👩‍💻
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        
+        <div class="dashboard-main">
+            <div class="content-box">
+                <h2 style="margin-bottom: 20px; color: var(--primary-color);">常見問題 (FAQ)</h2>
+                
+                <div class="list-body">
+                    
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>💰 關於款項與支付流程</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>為了保障雙方權益，本平台採用<strong>第三方託管機制</strong>：</p>
+                            <ul>
+                                <li><strong>委託人：</strong>發案時需先預存金額至平台，待驗收通過後才會撥款。</li>
+                                <li><strong>接案人：</strong>看到專案狀態為「進行中」代表款項已由平台保管，可安心執行。</li>
+                                <li><strong>提領：</strong>結案後，款項將在每週三自動匯入您設定的銀行帳戶。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>⚖️ 發生爭議或對方失去聯繫怎麼辦？</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>若遇到以下狀況，請立即申請仲裁：</p>
+                            <ul>
+                                <li><strong>失去聯繫：</strong>對方超過 7 天未回覆 Issue Tracker 訊息。</li>
+                                <li><strong>需求不符：</strong>產出與原定規格書有重大落差且拒絕修改。</li>
+                                <li><strong>惡意拖款：</strong>專案已完成但委託人無故不按驗收。</li>
+                            </ul>
+                            <p>請保留所有對話紀錄與檔案版本，寄信至 dispute@platform.com，我們將介入協調。</p>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>🔑 忘記密碼或無法登入</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>請嘗試以下步驟：</p>
+                            <ol>
+                                <li>確認您的帳號是否為 Email 格式。</li>
+                                <li>點擊登入頁面的「忘記密碼」連結（目前請直接聯繫客服重設）。</li>
+                                <li>若多次輸入錯誤被鎖定，請等待 15 分鐘後再試。</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <div class="accordion-header" onclick="toggleAccordion(this)">
+                            <span>📄 檔案上傳或版本控管問題</span>
+                            <span class="accordion-arrow">&rsaquo;</span>
+                        </div>
+                        <div class="accordion-content">
+                            <p>平台支援單一檔案最大 100MB。若上傳失敗：</p>
+                            <ul>
+                                <li>請檢查網路連線是否穩定。</li>
+                                <li>檔名請勿包含特殊符號（如 / \ * ?）。</li>
+                                <li>若檔案過大，建議使用雲端硬碟連結並將連結貼在「提案說明」或「Issue」中。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-sidebar">
+            <div class="project-list-container">
+                <div class="list-header">
+                    <h3>📬 聯絡我們</h3>
+                </div>
+                <div class="list-body" style="padding: 20px;">
+                    <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">
+                        找不到答案嗎？請填寫表單，我們將在 24 小時內回覆。
+                    </p>
+                    
+                    <form onsubmit="alert('訊息已送出！客服人員將盡快與您聯繫。'); return false;">
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label style="font-size: 0.9em; font-weight: bold;">問題類型</label>
+                            <select style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option>帳號問題</option>
+                                <option>付款與帳務</option>
+                                <option>檢舉違規</option>
+                                <option>平台功能建議</option>
+                                <option>其他</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label style="font-size: 0.9em; font-weight: bold;">Email</label>
+                            <input type="email" required placeholder="您的聯絡信箱" value="{{ user.email if user else '' }}"
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label style="font-size: 0.9em; font-weight: bold;">詳細說明</label>
+                            <textarea required rows="4" placeholder="請詳細描述您遇到的狀況..."
+                                      style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; resize: vertical;"></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block">送出訊息</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="sidebar-card" style="margin-top: 20px;">
+                <h4 style="margin-top: 0; color: var(--dark-text);">其他聯絡方式</h4>
+                <div style="font-size: 0.9em; color: #555; line-height: 1.8;">
+                    <p>📞 <strong>客服專線：</strong><br>02-1234-5678</p>
+                    <p>📧 <strong>客服信箱：</strong><br>support@platform.com</p>
+                    <p>⏰ <strong>服務時間：</strong><br>週一至週五 09:00 - 18:00</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function toggleAccordion(header) {
+            const item = header.parentElement;
+            // 如果希望同一時間只能開一個，可以把下面這段打開
+            /*
+            const allItems = document.querySelectorAll('.accordion-item');
+            allItems.forEach(i => {
+                if (i !== item) i.classList.remove('active');
+            });
+            */
+            item.classList.toggle('active');
+        }
+    </script>
+
+{% endblock %}
