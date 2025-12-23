@@ -19,6 +19,50 @@
             <span style="white-space: pre-wrap;">{{ project.description }}</span>
         </p>
     </div>
+    
+  {% if project.status == 'open' %}
+<div class="content-box" style="border-top: 5px solid #ffc107;">
+    <h3>⭐ 委託人過去評價</h3>
+
+    {% if client_rating.rating_count > 0 %}
+        <p>
+            <strong>需求合理性：</strong>
+            {{ "%.1f"|format(client_rating.requirement_rationality_avg) }} / 5
+        </p>
+        <p>
+            <strong>驗收難易度：</strong>
+            {{ "%.1f"|format(client_rating.acceptance_difficulty_avg) }} / 5
+        </p>
+        <p>
+            <strong>合作態度：</strong>
+            {{ "%.1f"|format(client_rating.client_attitude_avg) }} / 5
+        </p>
+        <p style="color:#666;">
+            共 {{ client_rating.rating_count }} 則評價
+        </p>
+
+        <hr>
+
+        <h4>近期評論</h4>
+        {% for c in client_comments %}
+            <div style="margin-bottom: 10px;">
+                <div style="font-size: 0.9em; color: #666;">
+                    {{ c.rating_date.strftime('%Y-%m-%d') }}
+                </div>
+                <div>{{ c.overall_comment }}</div>
+            </div>
+        {% endfor %}
+
+        {% if not client_comments %}
+            <p style="color:#999;">尚無文字評論</p>
+        {% endif %}
+
+    {% else %}
+        <p style="color:#999;">此委託人尚未收到任何評價</p>
+    {% endif %}
+</div>
+{% endif %}
+
 
     {% if project.status == 'open' and not has_proposed %}
         <div class="content-box">
@@ -62,6 +106,10 @@
                 </div>
             </form>
         </div>
+        
+    <div id="rating-tooltip" class="rating-tooltip hidden">
+        <div id="tooltip-content"></div>
+    </div>
     {% endif %}
 
     {% if issues %}
@@ -105,6 +153,56 @@
         {% endfor %}
     </div>
     {% endif %}
+    
+{% if project.status == 'completed' and can_rate %}
+<div class="content-box" style="border-top: 5px solid #ffc107;">
+    <h3>⭐ 評價委託人</h3>
+
+    <form method="POST" action="/api/ratings">
+        <input type="hidden" name="project_id" value="{{ project.id }}">
+
+        <div class="form-group">
+            <label>需求合理性</label>
+            <select name="requirement_rationality_score" required>
+                {% for i in range(1,6) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>驗收難易度</label>
+            <select name="acceptance_difficulty_score" required>
+                {% for i in range(1,6) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>合作態度</label>
+            <select name="client_attitude_score" required>
+                {% for i in range(1,6) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>整體評論</label>
+            <textarea name="overall_comment" rows="3"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            送出評價
+        </button>
+    </form>
+</div>
+{% endif %}
+
+
+
+
     
     {% if project.status == 'pending_approval' %}
         <p class="alert alert-success">檔案已提交，正在等待委託人驗收。</p>

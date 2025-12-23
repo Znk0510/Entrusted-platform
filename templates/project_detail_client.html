@@ -1,5 +1,63 @@
 {% extends "layout.html" %}
 
+{% block head %}
+<style>
+
+.rating-tooltip h4 {
+    margin: 0 0 6px 0;
+    font-size: 15px;
+}
+
+.rating-tooltip .comment {
+    font-size: 13px;
+    color: #555;
+    margin-top: 6px;
+    border-top: 1px dashed #eee;
+    padding-top: 4px;
+}
+
+.contractor-name {
+    cursor: pointer;
+    color: #0d6efd;
+    text-decoration: underline;
+}
+
+.rating-tooltip {
+    position: fixed;              /* 關鍵：不受表格影響 */
+    width: 300px;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    z-index: 9999;                /* 永遠在最上層 */
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.rating-tooltip.hidden {
+    display: none !important;
+}
+.rating-tooltip h4 {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+.rating-tooltip .avg {
+    margin-bottom: 6px;
+}
+
+.rating-tooltip .comment {
+    font-size: 13px;
+    color: #555;
+    margin-top: 6px;
+    border-top: 1px dashed #eee;
+    padding-top: 6px;
+}
+
+</style>
+{% endblock %}
+
 {% block title %}專案詳情: {{ project.title }}{% endblock %}
 
 {% block content %}
@@ -42,7 +100,15 @@
                     <tbody>
                         {% for p in proposals %}
                         <tr>
-                            <td>{{ p.contractor_name }}</td>
+                            <td style = "position: relative;">
+                                <span
+                                    class="contractor-name"
+                                    data-contractor-id="{{ p.contractor_id }}"
+                                >
+                                    {{ p.contractor_name }}
+                                </span>
+                            </td>
+
                             <td>$ {{ "%.2f"|format(p.quote) }}</td>
                             <td>{{ p.message }}</td>
                             <td>
@@ -51,7 +117,7 @@
                                 </form>
                             </td>
                         </tr>
-                        {% endfor %}
+                    {% endfor %}
                     </tbody>
                 </table>
             {% else %}
@@ -59,6 +125,69 @@
             {% endif %}
         </div>
     {% endif %}
+    
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+
+    const tooltip = document.getElementById("rating-tooltip");
+    const tooltipContent = document.getElementById("tooltip-content");
+    let hideTimer = null;
+
+    document.querySelectorAll(".contractor-name").forEach(el => {
+
+        el.addEventListener("mouseenter", async (e) => {
+            clearTimeout(hideTimer);
+
+            const contractorId = el.dataset.contractorId;
+
+            tooltip.style.left = e.clientX + 15 + "px";
+            tooltip.style.top  = e.clientY + 15 + "px";
+            tooltip.classList.remove("hidden");
+            tooltipContent.innerHTML = "載入中...";
+
+            try {
+                const res = await fetch(`/api/contractors/${contractorId}/rating-preview`);
+                const data = await res.json();
+
+                if (!data.summary || data.summary.rating_count === 0) {
+                    tooltipContent.innerHTML = "<p>尚無評價</p>";
+                } else {
+                    tooltipContent.innerHTML = `
+                        <h4>平均評價（${data.summary.rating_count} 筆）</h4>
+                        <div class="avg">成果品質：${Number(data.summary.output_quality_avg).toFixed(1)}</div>
+                        <div class="avg">執行效率：${Number(data.summary.efficiency_avg).toFixed(1)}</div>
+                        <div class="avg">合作態度：${Number(data.summary.attitude_avg).toFixed(1)}</div>
+                        ${data.comments.map(c =>
+                            `<div class="comment">「${c.overall_comment}」</div>`
+                        ).join("")}
+                    `;
+                }
+            } catch (err) {
+                tooltipContent.innerHTML = "<p>載入失敗</p>";
+                console.error(err);
+            }
+        });
+
+        el.addEventListener("mouseleave", () => {
+            hideTimer = setTimeout(() => {
+                tooltip.classList.add("hidden");
+            }, 150);
+        });
+    });
+
+    tooltip.addEventListener("mouseenter", () => {
+        clearTimeout(hideTimer);
+    });
+
+    tooltip.addEventListener("mouseleave", () => {
+        tooltip.classList.add("hidden");
+    });
+
+});
+</script>
+
+
 
     {% if project.status == 'pending_approval' %}
         <div class="content-box">
@@ -172,7 +301,57 @@
             <p>目前沒有已上傳的結案檔案。</p>
         {% endif %}
     </div>
+    
+    
+{% if project.status == 'completed' and can_rate %}
+
+<div class="content-box" style="border-top: 5px solid #ffc107;">
+    <h3>⭐ 接案人評價</h3>
+
+    <form method="POST" action="{{ url_for('create_rating') }}">
+        <input type="hidden" name="project_id" value="{{ project.id }}">
+        <input type="hidden" name="ratee_id" value="{{ contractor.id }}">
+
+        <div class="form-group">
+            <label>成果品質</label>
+            <select name="output_quality_score" required>
+                {% for i in range(1,6) %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>執行效率</label>
+            <select name="execution_efficiency_score" required>
+                {% for i in range(1,6) %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>合作態度</label>
+            <select name="contractor_attitude_score" required>
+                {% for i in range(1,6) %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>整體評論</label>
+            <textarea name="overall_comment" rows="3"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">送出評價</button>
+    </form>     
+</div>
+
+{% endif %}
 
     <br>
     <a href="{{ url_for('get_client_dashboard') }}" class="btn btn-secondary">返回儀表板</a>
+    
+
 {% endblock %}

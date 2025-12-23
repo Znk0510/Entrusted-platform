@@ -1,10 +1,20 @@
 import psycopg
+import asyncio
+from psycopg_pool import AsyncConnectionPool
+from psycopg.errors import DuplicateDatabase
 # 從你的 db.py 匯入連線資訊
-from db import dbHost, dbPort, defaultDB, dbUser, dbPassword
+from db import dbHost, dbPort, defaultDB, dbUser, dbPassword, DATABASE_CONNINFO
+from datetime import datetime
+
+if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+
+#-- 建立 review_role ENUM（若不存在）
+
 
 INIT_SQL = """
--- 1. 建立列舉類型 (Enum Types)
--- 使用 DO block 來檢查類型是否存在，避免錯誤
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
         CREATE TYPE user_role AS ENUM ('client', 'contractor');
@@ -13,6 +23,7 @@ DO $$ BEGIN
         CREATE TYPE project_status AS ENUM ('open', 'in_progress', 'pending_approval', 'completed', 'rejected');
     END IF;
 END $$;
+;
 
 -- 2. 建立 users 表
 CREATE TABLE IF NOT EXISTS users (
@@ -56,13 +67,38 @@ CREATE TABLE IF NOT EXISTS project_files (
     uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. 建立索引 (加速查詢)
+-- 6. 建立 ratings 表（甲乙雙向評價）
+CREATE TABLE IF NOT EXISTS ratings (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    rater_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ratee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    rating_direction VARCHAR(20) NOT NULL, -- 'client_to_contractor' 或 'contractor_to_client'
+    overall_comment TEXT,
+    rating_date TIMESTAMPTZ DEFAULT NOW(),
+
+    -- 乙方受評維度 (甲方評乙方)
+    output_quality_score INTEGER CHECK (output_quality_score BETWEEN 1 AND 5),
+    execution_efficiency_score INTEGER CHECK (execution_efficiency_score BETWEEN 1 AND 5),
+    contractor_attitude_score INTEGER CHECK (contractor_attitude_score BETWEEN 1 AND 5),
+
+    -- 甲方受評維度 (乙方評甲方)
+    requirement_rationality_score INTEGER CHECK (requirement_rationality_score BETWEEN 1 AND 5),
+    acceptance_difficulty_score INTEGER CHECK (acceptance_difficulty_score BETWEEN 1 AND 5),
+    client_attitude_score INTEGER CHECK (client_attitude_score BETWEEN 1 AND 5),
+
+    UNIQUE (project_id, rater_id, ratee_id)
+);
+
+
+-- 7. 建立索引 (加速查詢)
 CREATE INDEX IF NOT EXISTS idx_projects_client_id ON projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_projects_contractor_id ON projects(contractor_id);
 CREATE INDEX IF NOT EXISTS idx_proposals_project_id ON proposals(project_id);
 CREATE INDEX IF NOT EXISTS idx_proposals_contractor_id ON proposals(contractor_id);
 
--- 7. 建立 project_issues 表 (待解決事項)
+-- 8. 建立 project_issues 表 (待解決事項)
 CREATE TABLE IF NOT EXISTS project_issues (
     id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -73,7 +109,7 @@ CREATE TABLE IF NOT EXISTS project_issues (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. 建立 issue_comments 表 (事項討論/回覆)
+-- 9. 建立 issue_comments 表 (事項討論/回覆)
 CREATE TABLE IF NOT EXISTS issue_comments (
     id SERIAL PRIMARY KEY,
     issue_id INT NOT NULL REFERENCES project_issues(id) ON DELETE CASCADE,
@@ -82,30 +118,70 @@ CREATE TABLE IF NOT EXISTS issue_comments (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_issues_project_id ON project_issues(project_id);
+CREATE INDEX IF NOT EXISTS idx_issues_projects_id ON project_issues(project_id);
 CREATE INDEX IF NOT EXISTS idx_comments_issue_id ON issue_comments(issue_id);
 """
 
-def init_database():
-    """
-    連線到資料庫並執行初始化 SQL。
-    使用同步連線 (psycopg.connect) 以確保在 FastAPI 啟動前完成。
-    """
-    # 組合連線字串
-    conn_info = f"host={dbHost} port={dbPort} dbname={defaultDB} user={dbUser} password={dbPassword}"
-    
-    try:
-        print("正在檢查資料庫結構...")
-        with psycopg.connect(conn_info) as conn:
-            with conn.cursor() as cur:
-                cur.execute(INIT_SQL)
-            conn.commit() # 確認執行
-            print("資料庫初始化檢查完成！(表格已就緒)")
-    except Exception as e:
-        print(f"資料庫初始化失敗: {e}")
-        # 在這裡印出錯誤但不中斷程式，以免因暫時連線問題導致伺服器崩潰
-        # 如果是第一次執行且連線資訊錯誤，這裡會顯示錯誤訊息
+# -------------------------------------------------
+# 1️⃣ 確保 database 存在（不能在 transaction）
+# -------------------------------------------------
+async def ensure_database_exists():
+    conninfo = (
+        f"dbname=postgres "
+        f"user={dbUser} "
+        f"password={dbPassword} "
+        f"host={dbHost} "
+        f"port={dbPort}"
+    )
 
-if __name__ == "__main__":
+    conn = await psycopg.AsyncConnection.connect(
+        conninfo,
+        autocommit=True
+    )
+
+    try:
+        await conn.execute(f'CREATE DATABASE "{defaultDB}"')
+        print(f"✅ Database '{defaultDB}' created")
+    except DuplicateDatabase:
+        print(f"ℹ️ Database '{defaultDB}' already exists")
+    finally:
+        await conn.close()
+
+
+
+async def initialize_database():
+    print("🔧 初始化資料庫結構...")
+    async with await psycopg.AsyncConnection.connect(DATABASE_CONNINFO) as conn:
+        await conn.execute(INIT_SQL)
+    print("✅ Database schema ready")
+
+
+#async def initialize_database():
+   # print("正在檢查資料庫與資料表狀態...")
+    
+    # 建立一個臨時的連線池或單次連線來執行建表
+    #async with AsyncConnectionPool(DATABASE_CONNINFO) as pool:
+      #  async with pool.connection() as conn:
+       #     async with conn.cursor() as cur:
+        #        # 執行建表 SQL
+        #        await cur.execute(INIT_SQL)
+                # 確保變更被儲存
+       #         await conn.commit()
+                
+   # print("✅ 資料庫初始化完成！資料表已準備好。")
+
+
+#if __name__ == "__main__":
     # 這讓你可以單獨執行 `python init_db.py` 來測試
-    init_database()
+    #init_database()
+    
+# 這一塊是用來測試單獨執行這個檔案時用的
+# -------------------------------------------------
+# CLI 測試用
+# -------------------------------------------------
+if __name__ == "__main__":
+    async def main():
+        await ensure_database_exists()
+        await initialize_database()
+
+    asyncio.run(main())
